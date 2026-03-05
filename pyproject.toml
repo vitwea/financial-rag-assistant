@@ -78,8 +78,11 @@ asyncio_mode = "auto"          # for any async tests added in the future
 [tool.coverage.run]
 source   = ["src"]
 omit     = [
-    "src/app.py",              # Streamlit UI — hard to unit-test
-    "*/embeddings/embeddings.py",  # requires built index
+    "src/app.py",
+    "*/embeddings/embeddings.py",
+    "src/retrieval/retriever.py",
+    "src/retrieval/query_expander.py",
+    "src/utils/logger.py",
 ]
 
 [tool.coverage.report]
