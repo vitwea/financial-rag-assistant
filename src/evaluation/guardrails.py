@@ -147,13 +147,40 @@ class PreGuardrail:
         logger.info("Guardrail PASS: confidence OK (best_score=%.4f)", best_score)
         return GuardrailResult(passed=True)
 
+    # Patterns that indicate investment advice requests — always blocked
+    INVESTMENT_ADVICE_PATTERNS = re.compile(
+        r"\b(should i (buy|sell|invest|short|hold)|"
+        r"is it (worth|safe|good) to (buy|invest|own)|"
+        r"(buy|sell|invest in|short|hold) (tesla|apple|microsoft|tsla|aapl|msft)|"
+        r"(good|bad|worth) investment|"
+        r"investment advice|financial advice|"
+        r"will (the )?stock|price target|"
+        r"(going to|will it) (go up|go down|rise|fall|crash))\b",
+        re.IGNORECASE,
+    )
+
     @staticmethod
     def check_on_topic(query: str) -> GuardrailResult:
         """
         Fail if the query does not appear to be about supported companies
         or financial topics. Prevents using the assistant as a general chatbot.
+        Also blocks investment advice requests.
         """
         query_lower = query.lower()
+
+        # Block investment advice requests regardless of company mention
+        if bool(Guardrails.INVESTMENT_ADVICE_PATTERNS.search(query)):
+            logger.warning("Guardrail FAIL: investment advice request: '%s'", query)
+            return GuardrailResult(
+                passed  = False,
+                reason  = "investment_advice",
+                message = (
+                    "This assistant analyses 10-K filings and cannot provide "
+                    "investment advice or stock recommendations. "
+                    "Please ask about specific financial metrics, strategies, or "
+                    "risks disclosed in Tesla, Apple, or Microsoft annual reports."
+                ),
+            )
 
         # Check for supported company names
         mentions_company = any(c in query_lower for c in SUPPORTED_COMPANIES)
