@@ -6,13 +6,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── 1. CPU-only PyTorch (must come first to prevent CUDA version) ─────────────
+# ── 1. CPU-only PyTorch ───────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \
     "torch==2.3.0+cpu" \
     "torchvision==0.18.0+cpu" \
     --index-url https://download.pytorch.org/whl/cpu
 
-# ── 2. sentence-transformers without deps (avoids re-pulling CUDA torch) ──────
+# ── 2. sentence-transformers without deps ─────────────────────────────────────
 RUN pip install --no-cache-dir --no-deps sentence-transformers==2.7.0 && \
     pip install --no-cache-dir \
         transformers>=4.39.0 \
@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir --no-deps sentence-transformers==2.7.0 && \
         scikit-learn \
         scipy
 
-# ── 3. Everything else (explicit, no sentence-transformers) ───────────────────
+# ── 3. Everything else ────────────────────────────────────────────────────────
 RUN pip install --no-cache-dir \
     requests>=2.31.0 \
     python-dotenv>=1.0.0 \
@@ -44,12 +44,13 @@ RUN pip install --no-cache-dir \
 COPY src/ ./src/
 COPY data/index/ ./data/index/
 COPY data/processed/ ./data/processed/
+COPY start.sh .
 
-RUN mkdir -p logs
+RUN mkdir -p logs && chmod +x start.sh
+
+# Unset STREAMLIT_SERVER_PORT so Railway's auto-injection doesn't interfere
+ENV STREAMLIT_SERVER_PORT=""
 
 EXPOSE 8501
 
-CMD ["streamlit", "run", "src/app.py", \
-     "--server.port=8501", \
-     "--server.address=0.0.0.0", \
-     "--server.headless=true"]
+CMD ["/bin/bash", "start.sh"]
