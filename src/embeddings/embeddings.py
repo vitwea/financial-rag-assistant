@@ -1,29 +1,32 @@
 """
 embeddings.py
 -------------
-Loads all company chunks from JSON, generates vector embeddings using a
-local sentence-transformers model (no API cost), and saves a FAISS index
-to disk for fast similarity search.
+Loads all company chunks from JSON, generates vector embeddings using
+OpenAI text-embedding-3-small, and saves a FAISS index to disk.
 
-Model: BAAI/bge-large-en-v1.5
-  - Top-ranked on the MTEB leaderboard
-  - Strong semantic understanding for financial text
-  - Runs fully local, no API key required
+Model: text-embedding-3-small
+  - 1536 dimensions
+  - Fast and cheap (~$0.02 per 1M tokens)
+  - No local GPU/RAM requirements
 
 Usage:
-    python src/embeddings/embeddings.py
+    python -m src.embeddings.embeddings
 """
 
 import json
-from pathlib import Path
+import os
 import pickle
+from pathlib import Path
 
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from dotenv import load_dotenv
+from openai import OpenAI
+from tqdm import tqdm
 
 from src.utils.logger import get_logger
 
+load_dotenv()
 logger = get_logger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
@@ -31,17 +34,14 @@ logger = get_logger(__name__)
 PROCESSED_DIR = Path("data/processed")
 INDEX_DIR     = Path("data/index")
 
-MODEL_NAME  = "BAAI/bge-large-en-v1.5"
-BATCH_SIZE  = 32
-COMPANIES   = ["tesla", "apple", "microsoft"]
-
-BGE_PREFIX = "Represent this sentence for searching relevant passages: "
+MODEL_NAME = "text-embedding-3-small"
+BATCH_SIZE = 100
+COMPANIES  = ["tesla", "apple", "microsoft"]
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
 
 def load_all_chunks() -> list[dict]:
-    """Load chunk records for all companies and attach a global doc_id."""
     all_chunks = []
     doc_id = 0
 
@@ -50,12 +50,10 @@ def load_all_chunks() -> list[dict]:
         if not path.exists():
             logger.warning("Missing chunks file: %s — run processor.py first", path)
             continue
-
         chunks = json.loads(path.read_text(encoding="utf-8"))
         for chunk in chunks:
             chunk["doc_id"] = doc_id
             doc_id += 1
-
         all_chunks.extend(chunks)
         logger.info("Loaded %d chunks ← %s", len(chunks), company)
 
@@ -64,30 +62,27 @@ def load_all_chunks() -> list[dict]:
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
-def generate_embeddings(chunks: list[dict],
-                        model: SentenceTransformer) -> np.ndarray:
-    """Encode all chunk texts in batches. Returns float32 array (N, dim)."""
-    texts = [BGE_PREFIX + chunk["text"] for chunk in chunks]
+def generate_embeddings(chunks: list[dict], client: OpenAI) -> np.ndarray:
+    """Encode all chunks in batches via OpenAI API. Returns float32 (N, 1536)."""
+    texts = [chunk["text"] for chunk in chunks]
+    all_embeddings = []
 
     logger.info("Encoding %d chunks in batches of %d...", len(texts), BATCH_SIZE)
-    embeddings = model.encode(
-        texts,
-        batch_size=BATCH_SIZE,
-        show_progress_bar=True,
-        normalize_embeddings=True,
-        convert_to_numpy=True,
-    )
+
+    for i in tqdm(range(0, len(texts), BATCH_SIZE), desc="Embedding"):
+        batch    = texts[i : i + BATCH_SIZE]
+        response = client.embeddings.create(model=MODEL_NAME, input=batch)
+        all_embeddings.extend([item.embedding for item in response.data])
+
+    embeddings = np.array(all_embeddings, dtype="float32")
+    faiss.normalize_L2(embeddings)   # L2-norm → inner product == cosine similarity
     logger.info("Embeddings shape: %s", embeddings.shape)
-    return embeddings.astype("float32")
+    return embeddings
 
 
 # ── FAISS index ───────────────────────────────────────────────────────────────
 
 def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
-    """
-    Build a FAISS IndexFlatIP (inner product) index.
-    L2-normalised embeddings make inner product == cosine similarity.
-    """
     dim   = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
@@ -98,42 +93,34 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
 # ── Persistence ───────────────────────────────────────────────────────────────
 
 def save_artifacts(index: faiss.IndexFlatIP, chunks: list[dict]) -> None:
-    """Save the FAISS index and chunk metadata to disk."""
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
-
-    index_path    = INDEX_DIR / "faiss.index"
-    metadata_path = INDEX_DIR / "metadata.pkl"
-
-    faiss.write_index(index, str(index_path))
-    logger.info("Saved FAISS index → %s", index_path)
-
-    with open(metadata_path, "wb") as f:
+    faiss.write_index(index, str(INDEX_DIR / "faiss.index"))
+    with open(INDEX_DIR / "metadata.pkl", "wb") as f:
         pickle.dump(chunks, f)
-    logger.info("Saved metadata → %s (%d records)", metadata_path, len(chunks))
+    logger.info("Saved FAISS index + metadata (%d records)", len(chunks))
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main():
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise EnvironmentError("OPENAI_API_KEY not set in .env")
+
+    client = OpenAI(api_key=api_key)
+
     logger.info("=== STEP 1 — Loading chunks ===")
     chunks = load_all_chunks()
-
     if not chunks:
         logger.error("No chunks found. Aborting.")
         return
 
-    logger.info("Total chunks: %d", len(chunks))
+    logger.info("=== STEP 2 — Generating embeddings via OpenAI (%s) ===", MODEL_NAME)
+    embeddings = generate_embeddings(chunks, client)
 
-    logger.info("=== STEP 2 — Loading embedding model: %s ===", MODEL_NAME)
-    model = SentenceTransformer(MODEL_NAME)
-
-    logger.info("=== STEP 3 — Generating embeddings ===")
-    embeddings = generate_embeddings(chunks, model)
-
-    logger.info("=== STEP 4 — Building & saving FAISS index ===")
+    logger.info("=== STEP 3 — Building & saving FAISS index ===")
     index = build_faiss_index(embeddings)
     save_artifacts(index, chunks)
-
     logger.info("Done. Run retriever.py to test a query.")
 
 
