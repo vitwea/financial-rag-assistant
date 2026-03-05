@@ -15,9 +15,12 @@ Design:
     - The original query is kept intact for Cohere re-ranking (precise relevance).
 """
 
-# ---------------------------------------------------------------------------
-# Synonym map — keys are query terms, values are the 10-K equivalents
-# ---------------------------------------------------------------------------
+from src.utils.logger import get_logger
+
+logger = get_logger(__name__)
+
+# ── Synonym map ───────────────────────────────────────────────────────────────
+
 SYNONYM_MAP: dict[str, dict[str, str]] = {
     "apple": {
         "cloud":            "Services iCloud",
@@ -88,8 +91,11 @@ def expand_query(query: str, company: str | None = None) -> str:
                 extra_terms.update(expansion.split())
 
     if not extra_terms:
-        return query  # no expansion needed
+        return query
 
     expanded = query + " " + " ".join(sorted(extra_terms))
-    print(f"  Query expanded  : \"{expanded[:120]}{'…' if len(expanded) > 120 else ''}\"")
+    logger.debug(
+        "Query expanded: \"%s\"",
+        expanded[:120] + ("…" if len(expanded) > 120 else ""),
+    )
     return expanded
