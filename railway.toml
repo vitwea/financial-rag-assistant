@@ -1,5 +1,5 @@
 [deploy]
-startCommand = "bash start.sh"
+startCommand = "streamlit run app.py"
 healthcheckPath = "/_stcore/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

@@ -41,12 +41,8 @@ RUN pip install --no-cache-dir \
     pandas>=2.2.0
 
 # ── 4. Copy app ───────────────────────────────────────────────────────────────
-COPY .streamlit/ ./.streamlit/
+COPY app.py .
 COPY src/ ./src/
 COPY data/index/ ./data/index/
 COPY data/processed/ ./data/processed/
-COPY start.sh .
-
-RUN mkdir -p logs && chmod +x start.sh
-
-# No CMD here — railway.toml startCommand takes over
+RUN mkdir -p logs
