@@ -41,6 +41,7 @@ RUN pip install --no-cache-dir \
     pandas>=2.2.0
 
 # ── 4. Copy app ───────────────────────────────────────────────────────────────
+COPY .streamlit/ ./.streamlit/
 COPY src/ ./src/
 COPY data/index/ ./data/index/
 COPY data/processed/ ./data/processed/
