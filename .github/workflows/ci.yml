@@ -47,6 +47,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
+      - name: Create pip cache dir (suppress post-job warning)
+        run: mkdir -p ~/.cache/pip
+
       - name: Install ruff
         run: pip install ruff==0.4.7
 
@@ -70,7 +73,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: pip
+
+      - name: Create pip cache dir (suppress post-job warning)
+        run: mkdir -p ~/.cache/pip
 
       # ── Dependency install ────────────────────────────────────────────────
       # PyTorch CPU-only first (matches Dockerfile) to avoid downloading CUDA
