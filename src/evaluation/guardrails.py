@@ -47,6 +47,18 @@ FINANCIAL_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
+# Patterns that indicate investment advice requests — always blocked
+INVESTMENT_ADVICE_PATTERNS = re.compile(
+    r"\b(should i (buy|sell|invest|short|hold)|"
+    r"is it (worth|safe|good) to (buy|invest|own)|"
+    r"(buy|sell|invest in|short|hold) (tesla|apple|microsoft|tsla|aapl|msft)|"
+    r"(good|bad|worth) investment|"
+    r"investment advice|financial advice|"
+    r"will (the )?stock|price target|"
+    r"(going to|will it) (go up|go down|rise|fall|crash))\b",
+    re.IGNORECASE,
+)
+
 # Phrases that indicate the LLM went beyond the provided context
 HALLUCINATION_PHRASES = [
     "based on my knowledge",
@@ -147,18 +159,6 @@ class PreGuardrail:
         logger.info("Guardrail PASS: confidence OK (best_score=%.4f)", best_score)
         return GuardrailResult(passed=True)
 
-    # Patterns that indicate investment advice requests — always blocked
-    INVESTMENT_ADVICE_PATTERNS = re.compile(
-        r"\b(should i (buy|sell|invest|short|hold)|"
-        r"is it (worth|safe|good) to (buy|invest|own)|"
-        r"(buy|sell|invest in|short|hold) (tesla|apple|microsoft|tsla|aapl|msft)|"
-        r"(good|bad|worth) investment|"
-        r"investment advice|financial advice|"
-        r"will (the )?stock|price target|"
-        r"(going to|will it) (go up|go down|rise|fall|crash))\b",
-        re.IGNORECASE,
-    )
-
     @staticmethod
     def check_on_topic(query: str) -> GuardrailResult:
         """
@@ -169,7 +169,7 @@ class PreGuardrail:
         query_lower = query.lower()
 
         # Block investment advice requests regardless of company mention
-        if bool(Guardrails.INVESTMENT_ADVICE_PATTERNS.search(query)):
+        if bool(INVESTMENT_ADVICE_PATTERNS.search(query)):
             logger.warning("Guardrail FAIL: investment advice request: '%s'", query)
             return GuardrailResult(
                 passed  = False,
