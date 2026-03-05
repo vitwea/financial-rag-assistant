@@ -48,9 +48,4 @@ COPY start.sh .
 
 RUN mkdir -p logs && chmod +x start.sh
 
-# Unset STREAMLIT_SERVER_PORT so Railway's auto-injection doesn't interfere
-ENV STREAMLIT_SERVER_PORT=""
-
-EXPOSE 8501
-
-CMD ["/bin/bash", "start.sh"]
+# No CMD here — railway.toml startCommand takes over
