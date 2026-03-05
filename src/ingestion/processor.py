@@ -16,8 +16,8 @@ Usage:
 """
 
 import json
-import re
 from pathlib import Path
+import re
 
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
@@ -178,7 +178,7 @@ def main():
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
     # Find all raw 10-K files matching {company}_10k_{year}.ext
-    pattern = "*_10k_*.htm *_10k_*.html *_10k_*.pdf".split()
+    pattern = ["*_10k_*.htm", "*_10k_*.html", "*_10k_*.pdf"]
     all_files: list[Path] = []
     for pat in pattern:
         all_files.extend(RAW_DIR.glob(pat))

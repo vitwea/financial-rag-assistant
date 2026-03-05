@@ -13,9 +13,10 @@ Usage:
     python -m src.ingestion.downloader
 """
 
-import time
-import requests
 from pathlib import Path
+import time
+
+import requests
 
 from src.utils.logger import get_logger
 
