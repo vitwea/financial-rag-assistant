@@ -1,0 +1,32 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+*.egg-info/
+
+# Data — raw files are large, only include the index
+data/raw/
+
+# Dev/test files
+tests/
+notebooks/
+*.ipynb
+check_chunks.py
+
+# Git
+.git/
+.gitignore
+
+# Secrets
+.env
+
+# Logs
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
