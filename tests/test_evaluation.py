@@ -11,14 +11,14 @@ Run with:
 """
 
 from unittest.mock import MagicMock, patch
+
 import pytest
 
 from src.evaluation.guardrails import (
-    PreGuardrail,
-    PostGuardrail,
     GuardrailResult,
+    PostGuardrail,
+    PreGuardrail,
 )
-
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 

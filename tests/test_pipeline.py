@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-
 # ── Shared fixtures ───────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -325,8 +324,9 @@ class TestAPI:
         Inject a mock pipeline directly into the api module so the 503
         guard (pipeline is None) is bypassed for all test requests.
         """
-        import src.api.api as api_module
         from fastapi.testclient import TestClient
+
+        import src.api.api as api_module
 
         mock_pipeline = MagicMock()
         mock_pipeline.metadata = sample_chunks
