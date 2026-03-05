@@ -55,9 +55,12 @@ app = FastAPI(
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+
 class AskRequest(BaseModel):
     query: str = Field(
-        ..., min_length=5, max_length=500,
+        ...,
+        min_length=5,
+        max_length=500,
         json_schema_extra={"example": "What are the main risk factors for Tesla?"},
     )
     company_filter: str | None = Field(
@@ -73,28 +76,29 @@ class AskRequest(BaseModel):
 
 
 class SourceRecord(BaseModel):
-    company:    str
-    source:     str
+    company: str
+    source: str
     start_page: int
-    end_page:   int
-    score:      float
+    end_page: int
+    score: float
 
 
 class AskResponse(BaseModel):
-    query:          str
-    answer:         str
-    sources:        str
+    query: str
+    answer: str
+    sources: str
     source_details: list[SourceRecord]
-    latency_ms:     int
+    latency_ms: int
 
 
 class HealthResponse(BaseModel):
-    status:       str
+    status: str
     index_loaded: bool
     total_chunks: int
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
 
 @app.get("/health", response_model=HealthResponse, tags=["System"])
 def health_check():
@@ -127,31 +131,31 @@ def ask(request: AskRequest):
             detail=f"Invalid company_filter. Choose from: {sorted(valid_companies)}",
         )
 
-    logger.info("POST /ask — query: \"%s\" | filter: %s",
-                request.query, request.company_filter)
+    logger.info('POST /ask — query: "%s" | filter: %s', request.query, request.company_filter)
 
-    start  = time.perf_counter()
-    result = pipeline.ask(request.query, company_filter=request.company_filter, year_filter=request.year_filter)
+    start = time.perf_counter()
+    result = pipeline.ask(
+        request.query, company_filter=request.company_filter, year_filter=request.year_filter
+    )
     elapsed_ms = int((time.perf_counter() - start) * 1000)
 
     logger.info("Response generated in %d ms", elapsed_ms)
 
     source_details = [
         SourceRecord(
-            company    = chunk["company"],
-            source     = chunk["source"],
-            start_page = chunk["start_page"],
-            end_page   = chunk["end_page"],
-            score      = round(chunk.get("rerank_score",
-                                         chunk.get("faiss_score", 0.0)), 4),
+            company=chunk["company"],
+            source=chunk["source"],
+            start_page=chunk["start_page"],
+            end_page=chunk["end_page"],
+            score=round(chunk.get("rerank_score", chunk.get("faiss_score", 0.0)), 4),
         )
         for chunk in result["chunks_used"]
     ]
 
     return AskResponse(
-        query          = result["query"],
-        answer         = result["answer"],
-        sources        = result["sources"],
-        source_details = source_details,
-        latency_ms     = elapsed_ms,
+        query=result["query"],
+        answer=result["answer"],
+        sources=result["sources"],
+        source_details=source_details,
+        latency_ms=elapsed_ms,
     )

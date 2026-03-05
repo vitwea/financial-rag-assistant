@@ -22,18 +22,18 @@ Query routing:
 """
 
 import os
+from pathlib import Path
 import pickle
 import re
-from pathlib import Path
 
 import cohere
+from dotenv import load_dotenv
 import faiss
 import numpy as np
-from dotenv import load_dotenv
 from openai import OpenAI
 from rank_bm25 import BM25Okapi
 
-from src.retrieval.bm25_index import build_bm25_index, bm25_search
+from src.retrieval.bm25_index import bm25_search, build_bm25_index
 from src.retrieval.query_expander import expand_query
 from src.utils.logger import get_logger
 
@@ -42,15 +42,15 @@ logger = get_logger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-INDEX_DIR  = Path("data/index")
+INDEX_DIR = Path("data/index")
 MODEL_NAME = "text-embedding-3-small"
 
-FAISS_TOP_K      = 20
-BM25_TOP_K       = 20
-RRF_K            = 60
-RERANK_TOP_K     = 5
+FAISS_TOP_K = 20
+BM25_TOP_K = 20
+RRF_K = 60
+RERANK_TOP_K = 5
 FAISS_PER_ENTITY = 8
-MIN_PER_ENTITY   = 1
+MIN_PER_ENTITY = 1
 
 COHERE_RERANK_MODEL = "rerank-english-v3.0"
 
@@ -86,18 +86,17 @@ def _get_openai_client() -> OpenAI:
 
 # ── Index loading ─────────────────────────────────────────────────────────────
 
+
 def load_index() -> tuple[faiss.IndexFlatIP, list[dict], BM25Okapi]:
     """
     Load FAISS index + metadata and build BM25 index in memory.
     Returns (faiss_index, metadata, bm25_index).
     """
-    index_path    = INDEX_DIR / "faiss.index"
+    index_path = INDEX_DIR / "faiss.index"
     metadata_path = INDEX_DIR / "metadata.pkl"
 
     if not index_path.exists() or not metadata_path.exists():
-        raise FileNotFoundError(
-            "Index not found. Run src/embeddings/embeddings.py first."
-        )
+        raise FileNotFoundError("Index not found. Run src/embeddings/embeddings.py first.")
 
     index = faiss.read_index(str(index_path))
     with open(metadata_path, "rb") as f:
@@ -107,35 +106,38 @@ def load_index() -> tuple[faiss.IndexFlatIP, list[dict], BM25Okapi]:
 
     logger.info(
         "FAISS index: %d vectors | BM25 index: %d chunks",
-        index.ntotal, len(metadata),
+        index.ntotal,
+        len(metadata),
     )
     return index, metadata, bm25
 
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
+
 def embed_query(query: str) -> np.ndarray:
     """Embed a single query via OpenAI. Returns normalised (1, 1536) float32."""
-    client   = _get_openai_client()
+    client = _get_openai_client()
     response = client.embeddings.create(model=MODEL_NAME, input=query)
-    vec      = np.array(response.data[0].embedding, dtype="float32").reshape(1, -1)
+    vec = np.array(response.data[0].embedding, dtype="float32").reshape(1, -1)
     faiss.normalize_L2(vec)
     return vec
 
 
 # ── FAISS search ──────────────────────────────────────────────────────────────
 
+
 def faiss_search(
-    query:          str,
-    index:          faiss.IndexFlatIP,
-    metadata:       list[dict],
-    top_k:          int = FAISS_TOP_K,
+    query: str,
+    index: faiss.IndexFlatIP,
+    metadata: list[dict],
+    top_k: int = FAISS_TOP_K,
     company_filter: str | None = None,
-    year_filter:    int | None = None,
+    year_filter: int | None = None,
 ) -> list[dict]:
     """Semantic vector search with optional filters."""
     vec = embed_query(query)
-    k   = min(
+    k = min(
         index.ntotal,
         top_k * 10 if (company_filter or year_filter) else top_k,
     )
@@ -157,17 +159,20 @@ def faiss_search(
 
     logger.debug(
         "FAISS: %d candidates (company=%s year=%s)",
-        len(results), company_filter, year_filter,
+        len(results),
+        company_filter,
+        year_filter,
     )
     return results
 
 
 # ── Reciprocal Rank Fusion ────────────────────────────────────────────────────
 
+
 def reciprocal_rank_fusion(
     faiss_results: list[dict],
-    bm25_results:  list[dict],
-    k:             int = RRF_K,
+    bm25_results: list[dict],
+    k: int = RRF_K,
 ) -> list[dict]:
     """
     Merge FAISS and BM25 ranked lists using Reciprocal Rank Fusion.
@@ -177,11 +182,12 @@ def reciprocal_rank_fusion(
     Sorting is stable: ties are broken by uid string so the output
     is always deterministic for the same inputs.
     """
+
     def _uid(chunk: dict) -> tuple:
         return (chunk["company"], chunk.get("year"), chunk["chunk_id"])
 
     rrf_scores: dict[tuple, float] = {}
-    chunks_map: dict[tuple, dict]  = {}
+    chunks_map: dict[tuple, dict] = {}
 
     for rank, chunk in enumerate(faiss_results, start=1):
         uid = _uid(chunk)
@@ -207,54 +213,66 @@ def reciprocal_rank_fusion(
 
     logger.debug(
         "RRF: %d FAISS + %d BM25 → %d unique candidates",
-        len(faiss_results), len(bm25_results), len(merged),
+        len(faiss_results),
+        len(bm25_results),
+        len(merged),
     )
     return merged
 
 
 # ── Hybrid search ─────────────────────────────────────────────────────────────
 
+
 def hybrid_search(
-    query:          str,
-    index:          faiss.IndexFlatIP,
-    metadata:       list[dict],
-    bm25:           BM25Okapi,
-    top_k:          int = FAISS_TOP_K,
+    query: str,
+    index: faiss.IndexFlatIP,
+    metadata: list[dict],
+    bm25: BM25Okapi,
+    top_k: int = FAISS_TOP_K,
     company_filter: str | None = None,
-    year_filter:    int | None = None,
+    year_filter: int | None = None,
 ) -> list[dict]:
     """FAISS + BM25 merged via RRF."""
     faiss_results = faiss_search(
-        query, index, metadata, top_k=top_k,
-        company_filter=company_filter, year_filter=year_filter,
+        query,
+        index,
+        metadata,
+        top_k=top_k,
+        company_filter=company_filter,
+        year_filter=year_filter,
     )
     bm25_results = bm25_search(
-        query, bm25, metadata, top_k=top_k,
-        company_filter=company_filter, year_filter=year_filter,
+        query,
+        bm25,
+        metadata,
+        top_k=top_k,
+        company_filter=company_filter,
+        year_filter=year_filter,
     )
     return reciprocal_rank_fusion(faiss_results, bm25_results)
 
 
 # ── Per-entity hybrid search ──────────────────────────────────────────────────
 
+
 def hybrid_search_per_entity(
-    query:            str,
-    index:            faiss.IndexFlatIP,
-    metadata:         list[dict],
-    bm25:             BM25Okapi,
-    per_entity:       int = FAISS_PER_ENTITY,
+    query: str,
+    index: faiss.IndexFlatIP,
+    metadata: list[dict],
+    bm25: BM25Okapi,
+    per_entity: int = FAISS_PER_ENTITY,
     target_companies: list[str] | None = None,
-    target_years:     list[int] | None = None,
-    company_context:  str | None = None,
+    target_years: list[int] | None = None,
+    company_context: str | None = None,
 ) -> list[dict]:
     """Hybrid search per company or per year to guarantee balanced pools."""
     all_candidates: list[dict] = []
-    seen_ids: set[tuple]       = set()
+    seen_ids: set[tuple] = set()
 
     def _uid(chunk: dict) -> tuple:
         return (chunk["company"], chunk.get("year"), chunk["chunk_id"])
 
-    targets   = target_years if target_years else (target_companies or [])
+    targets = target_years if target_years else (target_companies or [])
     use_years = bool(target_years)
 
     for entity in targets:
@@ -262,8 +280,11 @@ def hybrid_search_per_entity(
         yf = entity if use_years else None
 
         expanded = expand_query(query, cf)
-        results  = hybrid_search(
-            expanded, index, metadata, bm25,
+        results = hybrid_search(
+            expanded,
+            index,
+            metadata,
+            bm25,
             top_k=per_entity * 3,
             company_filter=cf,
             year_filter=yf,
@@ -286,6 +307,7 @@ def hybrid_search_per_entity(
 
 # ── Cohere reranking ──────────────────────────────────────────────────────────
 
+
 def rerank_all(query: str, candidates: list[dict]) -> list[dict]:
     """Re-rank via Cohere. Falls back to RRF order if key not set."""
     if not candidates:
@@ -300,12 +322,12 @@ def rerank_all(query: str, candidates: list[dict]) -> list[dict]:
             reverse=True,
         )
 
-    co       = cohere.Client(api_key)
+    co = cohere.Client(api_key)
     response = co.rerank(
-        model     = COHERE_RERANK_MODEL,
-        query     = query,
-        documents = [c["text"] for c in candidates],
-        top_n     = len(candidates),
+        model=COHERE_RERANK_MODEL,
+        query=query,
+        documents=[c["text"] for c in candidates],
+        top_n=len(candidates),
     )
     scored = []
     for r in response.results:
@@ -323,19 +345,20 @@ def rerank_all(query: str, candidates: list[dict]) -> list[dict]:
 
 # ── Balanced selection ────────────────────────────────────────────────────────
 
+
 def balanced_select(
-    scored:   list[dict],
-    top_k:    int = RERANK_TOP_K,
-    min_per:  int = MIN_PER_ENTITY,
+    scored: list[dict],
+    top_k: int = RERANK_TOP_K,
+    min_per: int = MIN_PER_ENTITY,
     entities: list | None = None,
-    key:      str = "company",
+    key: str = "company",
 ) -> list[dict]:
     """Select top_k guaranteeing min_per slots per entity."""
     if not entities:
         return scored[:top_k]
 
     reserved: list[dict] = []
-    used_ids: set        = set()
+    used_ids: set = set()
 
     def _uid(c: dict) -> tuple:
         return (c["company"], c.get("year"), c["chunk_id"])
@@ -364,6 +387,7 @@ def balanced_select(
 
 # ── Query classifiers ─────────────────────────────────────────────────────────
 
+
 def _is_comparison_query(query: str) -> bool:
     return bool(COMPARISON_KEYWORDS.search(query))
 
@@ -377,7 +401,7 @@ def _detect_companies(query: str) -> list[str]:
     Detect companies explicitly mentioned in the query.
     Returns [] if none are mentioned — no fallback to ALL_COMPANIES.
     """
-    low   = query.lower()
+    low = query.lower()
     found = [c for c in ALL_COMPANIES if c in low]
     return found
 
@@ -391,27 +415,33 @@ def _detect_years(query: str, metadata: list[dict]) -> list[int]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
+
 def retrieve(
-    query:          str,
-    index:          faiss.IndexFlatIP,
-    metadata:       list[dict],
-    bm25:           BM25Okapi,
+    query: str,
+    index: faiss.IndexFlatIP,
+    metadata: list[dict],
+    bm25: BM25Okapi,
     company_filter: str | None = None,
-    year_filter:    int | None = None,
+    year_filter: int | None = None,
 ) -> list[dict]:
     """
     Main entry point — routes the query and returns top-k chunks for the LLM.
     """
     logger.info(
         'Retrieving: "%s" (company=%s year=%s)',
-        query, company_filter, year_filter,
+        query,
+        company_filter,
+        year_filter,
     )
 
     # 1) Explicit filter by company/year → always respect
     if company_filter or year_filter:
-        expanded   = expand_query(query, company_filter)
+        expanded = expand_query(query, company_filter)
         candidates = hybrid_search(
-            expanded, index, metadata, bm25,
+            expanded,
+            index,
+            metadata,
+            bm25,
             top_k=FAISS_TOP_K,
             company_filter=company_filter,
             year_filter=year_filter,
@@ -420,12 +450,16 @@ def retrieve(
 
     # 2) Temporal queries (trends, historical evolution, etc.)
     if _is_temporal_query(query):
-        companies   = _detect_companies(query)
+        companies = _detect_companies(query)
         company_ctx = companies[0] if len(companies) == 1 else None
-        years       = _detect_years(query, metadata)
-        candidates  = hybrid_search_per_entity(
-            query, index, metadata, bm25,
-            target_years=years, company_context=company_ctx,
+        years = _detect_years(query, metadata)
+        candidates = hybrid_search_per_entity(
+            query,
+            index,
+            metadata,
+            bm25,
+            target_years=years,
+            company_context=company_ctx,
         )
         scored = rerank_all(query, candidates)
         return balanced_select(scored, entities=years, key="year")
@@ -439,7 +473,10 @@ def retrieve(
             companies = ALL_COMPANIES
 
         candidates = hybrid_search_per_entity(
-            query, index, metadata, bm25,
+            query,
+            index,
+            metadata,
+            bm25,
             target_companies=companies,
         )
         scored = rerank_all(query, candidates)

@@ -28,19 +28,20 @@ logger = get_logger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-RAW_DIR       = Path("data/raw")
+RAW_DIR = Path("data/raw")
 PROCESSED_DIR = Path("data/processed")
 
-CHUNK_SIZE    = 500
-OVERLAP       = 50
-MIN_CHUNK     = 50
+CHUNK_SIZE = 500
+OVERLAP = 50
+MIN_CHUNK = 50
 MIN_BLOCK_LEN = 80
 
 
 # ── Text extraction ───────────────────────────────────────────────────────────
 
+
 def extract_from_html(file_path: Path) -> list[dict]:
-    raw  = file_path.read_text(encoding="utf-8", errors="replace")
+    raw = file_path.read_text(encoding="utf-8", errors="replace")
     soup = BeautifulSoup(raw, "html.parser")
 
     for tag in soup(["script", "style", "head", "meta", "link", "ix:header"]):
@@ -48,8 +49,7 @@ def extract_from_html(file_path: Path) -> list[dict]:
     for tag in soup.find_all(style=re.compile(r"display\s*:\s*none", re.I)):
         tag.decompose()
 
-    content_tags = ["p", "div", "section", "span", "td", "li",
-                    "h1", "h2", "h3", "h4", "h5"]
+    content_tags = ["p", "div", "section", "span", "td", "li", "h1", "h2", "h3", "h4", "h5"]
     blocks = []
     for element in soup.find_all(content_tags):
         if element.find(content_tags):
@@ -58,11 +58,11 @@ def extract_from_html(file_path: Path) -> list[dict]:
         if len(text) >= MIN_BLOCK_LEN:
             blocks.append(text)
 
-    combined      = " ".join(blocks)
+    combined = " ".join(blocks)
     chars_per_page = 3_000
     pages = []
     for idx, start in enumerate(range(0, len(combined), chars_per_page)):
-        pages.append({"page": idx + 1, "text": combined[start: start + chars_per_page]})
+        pages.append({"page": idx + 1, "text": combined[start : start + chars_per_page]})
 
     logger.debug("Extracted %d virtual pages from HTML (%d chars)", len(pages), len(combined))
     return pages
@@ -70,7 +70,7 @@ def extract_from_html(file_path: Path) -> list[dict]:
 
 def extract_from_pdf(file_path: Path) -> list[dict]:
     reader = PdfReader(file_path)
-    pages  = []
+    pages = []
     for i, page in enumerate(reader.pages):
         text = page.extract_text() or ""
         if text.strip():
@@ -90,6 +90,7 @@ def extract_text(file_path: Path) -> list[dict]:
 
 # ── Cleaning ──────────────────────────────────────────────────────────────────
 
+
 def clean_text(text: str) -> str:
     text = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
     text = re.sub(r" {3,}", "  ", text)
@@ -101,35 +102,38 @@ def clean_text(text: str) -> str:
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
 
-def chunk_pages(pages: list[dict],
-                chunk_size: int = CHUNK_SIZE,
-                overlap: int = OVERLAP) -> list[dict]:
+
+def chunk_pages(
+    pages: list[dict], chunk_size: int = CHUNK_SIZE, overlap: int = OVERLAP
+) -> list[dict]:
     word_list: list[tuple[str, int]] = []
     for page in pages:
         cleaned = clean_text(page["text"])
         for word in cleaned.split():
             word_list.append((word, page["page"]))
 
-    chunks   = []
+    chunks = []
     chunk_id = 0
-    i        = 0
-    step     = chunk_size - overlap
+    i = 0
+    step = chunk_size - overlap
 
     while i < len(word_list):
-        window = word_list[i: i + chunk_size]
+        window = word_list[i : i + chunk_size]
         if len(window) < MIN_CHUNK:
             break
 
-        words  = [w for w, _ in window]
+        words = [w for w, _ in window]
         pages_ = [p for _, p in window]
 
-        chunks.append({
-            "chunk_id":   chunk_id,
-            "text":       " ".join(words),
-            "start_page": pages_[0],
-            "end_page":   pages_[-1],
-            "word_count": len(words),
-        })
+        chunks.append(
+            {
+                "chunk_id": chunk_id,
+                "text": " ".join(words),
+                "start_page": pages_[0],
+                "end_page": pages_[-1],
+                "word_count": len(words),
+            }
+        )
         chunk_id += 1
         i += step
 
@@ -139,12 +143,13 @@ def chunk_pages(pages: list[dict],
 
 # ── Year extraction ───────────────────────────────────────────────────────────
 
+
 def extract_year_from_filename(file_path: Path) -> int:
     """
     Extract fiscal year from filename convention: {company}_10k_{year}.ext
     Falls back to 0 if the year cannot be parsed.
     """
-    stem  = file_path.stem           # e.g. "tesla_10k_2024"
+    stem = file_path.stem  # e.g. "tesla_10k_2024"
     parts = stem.split("_")
     for part in reversed(parts):
         if part.isdigit() and len(part) == 4:
@@ -155,24 +160,26 @@ def extract_year_from_filename(file_path: Path) -> int:
 
 # ── Document pipeline ─────────────────────────────────────────────────────────
 
+
 def process_document(file_path: Path, company: str) -> list[dict]:
     """Full pipeline for a single 10-K file: extract → chunk → annotate."""
     logger.info("Processing: %s", file_path.name)
 
-    year   = extract_year_from_filename(file_path)
-    pages  = extract_text(file_path)
+    year = extract_year_from_filename(file_path)
+    pages = extract_text(file_path)
     chunks = chunk_pages(pages)
 
     for chunk in chunks:
         chunk["company"] = company
-        chunk["year"]    = year          # ← NEW
-        chunk["source"]  = file_path.name
+        chunk["year"] = year  # ← NEW
+        chunk["source"] = file_path.name
 
     logger.info("  %s %d → %d chunks", company.upper(), year, len(chunks))
     return chunks
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
@@ -230,14 +237,16 @@ def main():
         years = sorted({c["year"] for c in chunks})
         logger.info(
             "Saved %s → %d chunks across years %s",
-            output_path.name, len(chunks), years,
+            output_path.name,
+            len(chunks),
+            years,
         )
 
     # Summary
     logger.info("─── Summary ───────────────────────────────")
     total = 0
     for company, chunks in company_chunks.items():
-        years  = sorted({c["year"] for c in chunks})
+        years = sorted({c["year"] for c in chunks})
         logger.info("  %-12s %d chunks | years: %s", company, len(chunks), years)
         total += len(chunks)
     logger.info("  TOTAL: %d chunks", total)

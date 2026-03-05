@@ -15,12 +15,12 @@ Usage:
 
 import json
 import os
-import pickle
 from pathlib import Path
+import pickle
 
+from dotenv import load_dotenv
 import faiss
 import numpy as np
-from dotenv import load_dotenv
 from openai import OpenAI
 from tqdm import tqdm
 
@@ -32,14 +32,15 @@ logger = get_logger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 PROCESSED_DIR = Path("data/processed")
-INDEX_DIR     = Path("data/index")
+INDEX_DIR = Path("data/index")
 
 MODEL_NAME = "text-embedding-3-small"
 BATCH_SIZE = 512
-COMPANIES  = ["tesla", "apple", "microsoft"]
+COMPANIES = ["tesla", "apple", "microsoft"]
 
 
 # ── Data loading ──────────────────────────────────────────────────────────────
+
 
 def load_all_chunks() -> list[dict]:
     all_chunks = []
@@ -62,6 +63,7 @@ def load_all_chunks() -> list[dict]:
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 
+
 def generate_embeddings(chunks: list[dict], client: OpenAI) -> np.ndarray:
     """Encode all chunks in batches via OpenAI API. Returns float32 (N, 1536)."""
     texts = [chunk["text"] for chunk in chunks]
@@ -70,20 +72,21 @@ def generate_embeddings(chunks: list[dict], client: OpenAI) -> np.ndarray:
     logger.info("Encoding %d chunks in batches of %d...", len(texts), BATCH_SIZE)
 
     for i in tqdm(range(0, len(texts), BATCH_SIZE), desc="Embedding"):
-        batch    = texts[i : i + BATCH_SIZE]
+        batch = texts[i : i + BATCH_SIZE]
         response = client.embeddings.create(model=MODEL_NAME, input=batch)
         all_embeddings.extend([item.embedding for item in response.data])
 
     embeddings = np.array(all_embeddings, dtype="float32")
-    faiss.normalize_L2(embeddings)   # L2-norm → inner product == cosine similarity
+    faiss.normalize_L2(embeddings)  # L2-norm → inner product == cosine similarity
     logger.info("Embeddings shape: %s", embeddings.shape)
     return embeddings
 
 
 # ── FAISS index ───────────────────────────────────────────────────────────────
 
+
 def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
-    dim   = embeddings.shape[1]
+    dim = embeddings.shape[1]
     index = faiss.IndexFlatIP(dim)
     index.add(embeddings)
     logger.info("FAISS index built — %d vectors (dim=%d)", index.ntotal, dim)
@@ -91,6 +94,7 @@ def build_faiss_index(embeddings: np.ndarray) -> faiss.IndexFlatIP:
 
 
 # ── Persistence ───────────────────────────────────────────────────────────────
+
 
 def save_artifacts(index: faiss.IndexFlatIP, chunks: list[dict]) -> None:
     INDEX_DIR.mkdir(parents=True, exist_ok=True)
@@ -101,6 +105,7 @@ def save_artifacts(index: faiss.IndexFlatIP, chunks: list[dict]) -> None:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     api_key = os.getenv("OPENAI_API_KEY")

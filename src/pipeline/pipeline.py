@@ -35,8 +35,8 @@ logger = get_logger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-LLM_MODEL   = "gpt-4o-mini"
-MAX_TOKENS  = 1_024
+LLM_MODEL = "gpt-4o-mini"
+MAX_TOKENS = 1_024
 TEMPERATURE = 0.1
 
 SYSTEM_PROMPT = """You are a professional financial analyst assistant specializing
@@ -53,6 +53,7 @@ Rules you must ALWAYS follow:
 
 
 # ── Prompt builder ────────────────────────────────────────────────────────────
+
 
 def build_prompt(query: str, chunks: list[dict]) -> str:
     """Construct the user message with retrieved context injected."""
@@ -71,6 +72,7 @@ def build_prompt(query: str, chunks: list[dict]) -> str:
 
 # ── LLM call ──────────────────────────────────────────────────────────────────
 
+
 def call_llm(system: str, user: str, client: OpenAI) -> str:
     """Send a chat completion request and return the response text."""
     logger.info("Calling LLM: %s", LLM_MODEL)
@@ -80,7 +82,7 @@ def call_llm(system: str, user: str, client: OpenAI) -> str:
         max_tokens=MAX_TOKENS,
         messages=[
             {"role": "system", "content": system},
-            {"role": "user",   "content": user},
+            {"role": "user", "content": user},
         ],
     )
     return response.choices[0].message.content
@@ -88,9 +90,10 @@ def call_llm(system: str, user: str, client: OpenAI) -> str:
 
 # ── Source formatter ──────────────────────────────────────────────────────────
 
+
 def format_sources(chunks: list[dict]) -> str:
     """Build a deduplicated source list appended to every answer."""
-    seen  = set()
+    seen = set()
     lines = ["**Sources used:**"]
 
     for chunk in chunks:
@@ -108,6 +111,7 @@ def format_sources(chunks: list[dict]) -> str:
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 class RAGPipeline:
     """
@@ -134,15 +138,16 @@ class RAGPipeline:
     def _get_evaluator(self):
         if self._evaluator is None:
             from src.evaluation.evaluator import RAGEvaluator
+
             self._evaluator = RAGEvaluator()
         return self._evaluator
 
     def ask(
         self,
-        query:          str,
+        query: str,
         company_filter: str | None = None,
-        year_filter:    int | None = None,
-        evaluate:       bool = False,
+        year_filter: int | None = None,
+        evaluate: bool = False,
     ) -> dict:
         """
         Answer a financial question using the RAG pipeline.
@@ -156,8 +161,13 @@ class RAGPipeline:
         Returns dict with keys:
             query, answer, sources, chunks_used, guardrails, evaluation, blocked
         """
-        logger.info("Pipeline.ask: \"%s\" (company=%s, year=%s, evaluate=%s)",
-                    query, company_filter, year_filter, evaluate)
+        logger.info(
+            'Pipeline.ask: "%s" (company=%s, year=%s, evaluate=%s)',
+            query,
+            company_filter,
+            year_filter,
+            evaluate,
+        )
 
         # ── Step 1: Pre-guardrail — topic check ───────────────────────────────
         topic_check = PreGuardrail.check_on_topic(query)
@@ -167,7 +177,10 @@ class RAGPipeline:
 
         # ── Step 2: Retrieve chunks (hybrid FAISS + BM25 + Cohere rerank) ─────
         chunks = retrieve(
-            query, self.index, self.metadata, self.bm25,
+            query,
+            self.index,
+            self.metadata,
+            self.bm25,
             company_filter=company_filter,
             year_filter=year_filter,
         )
@@ -180,12 +193,12 @@ class RAGPipeline:
 
         # ── Step 4: Generate answer ───────────────────────────────────────────
         user_prompt = build_prompt(query, chunks)
-        answer      = call_llm(SYSTEM_PROMPT, user_prompt, self.client)
-        sources     = format_sources(chunks)
+        answer = call_llm(SYSTEM_PROMPT, user_prompt, self.client)
+        sources = format_sources(chunks)
         logger.info("Answer generated (%d chars)", len(answer))
 
         # ── Step 5: Post-guardrails ───────────────────────────────────────────
-        post_results  = PostGuardrail.run_all(answer)
+        post_results = PostGuardrail.run_all(answer)
         post_warnings = [r.message for r in post_results if not r]
         if post_warnings:
             answer += "\n\n" + "\n".join(post_warnings)
@@ -199,23 +212,23 @@ class RAGPipeline:
                 logger.error("Evaluation failed: %s", exc)
 
         return {
-            "query":       query,
-            "answer":      answer,
-            "sources":     sources,
+            "query": query,
+            "answer": answer,
+            "sources": sources,
             "chunks_used": chunks,
-            "guardrails":  post_results,
-            "evaluation":  evaluation,
-            "blocked":     False,
+            "guardrails": post_results,
+            "evaluation": evaluation,
+            "blocked": False,
         }
 
     @staticmethod
     def _blocked_response(query: str, message: str, guardrails: list) -> dict:
         return {
-            "query":       query,
-            "answer":      message,
-            "sources":     "",
+            "query": query,
+            "answer": message,
+            "sources": "",
             "chunks_used": [],
-            "guardrails":  guardrails,
-            "evaluation":  None,
-            "blocked":     True,
+            "guardrails": guardrails,
+            "evaluation": None,
+            "blocked": True,
         }

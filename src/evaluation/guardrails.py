@@ -26,10 +26,10 @@ logger = get_logger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 # Minimum rerank score — below this the retrieved context is too weak
-MIN_RERANK_SCORE = 0.01   # raised from 0.001 (was effectively never triggered)
+MIN_RERANK_SCORE = 0.01  # raised from 0.001 (was effectively never triggered)
 
 # Minimum FAISS score when Cohere reranker is not available
-MIN_FAISS_SCORE  = 0.15
+MIN_FAISS_SCORE = 0.15
 
 SUPPORTED_COMPANIES = {"tesla", "apple", "microsoft"}
 
@@ -67,6 +67,7 @@ HALLUCINATION_PHRASES = [
 
 # ── Result ────────────────────────────────────────────────────────────────────
 
+
 class GuardrailResult:
     """
     Outcome of a single guardrail check.
@@ -78,8 +79,8 @@ class GuardrailResult:
     """
 
     def __init__(self, passed: bool, reason: str = "", message: str = ""):
-        self.passed  = passed
-        self.reason  = reason
+        self.passed = passed
+        self.reason = reason
         self.message = message
 
     def __bool__(self) -> bool:
@@ -92,6 +93,7 @@ class GuardrailResult:
 
 # ── Pre-generation guardrails ─────────────────────────────────────────────────
 
+
 class PreGuardrail:
     """Checks to run before calling the LLM (fast, no API calls)."""
 
@@ -100,9 +102,9 @@ class PreGuardrail:
         if not chunks:
             logger.warning("Guardrail FAIL: no chunks retrieved")
             return GuardrailResult(
-                passed  = False,
-                reason  = "no_chunks",
-                message = (
+                passed=False,
+                reason="no_chunks",
+                message=(
                     "I could not find any relevant passages in the 10-K filings "
                     "to answer your question. Please try rephrasing your query or "
                     "ask about Tesla, Apple, or Microsoft specifically."
@@ -114,25 +116,23 @@ class PreGuardrail:
     def check_confidence(chunks: list[dict]) -> GuardrailResult:
         """Block if the best chunk score is below the minimum threshold."""
         best_score = max(
-            c.get("rerank_score", c.get("rrf_score", c.get("faiss_score", 0.0)))
-            for c in chunks
+            c.get("rerank_score", c.get("rrf_score", c.get("faiss_score", 0.0))) for c in chunks
         )
 
         threshold = (
-            MIN_RERANK_SCORE
-            if any("rerank_score" in c for c in chunks)
-            else MIN_FAISS_SCORE
+            MIN_RERANK_SCORE if any("rerank_score" in c for c in chunks) else MIN_FAISS_SCORE
         )
 
         if best_score < threshold:
             logger.warning(
                 "Guardrail FAIL: low confidence (best_score=%.4f < threshold=%.4f)",
-                best_score, threshold,
+                best_score,
+                threshold,
             )
             return GuardrailResult(
-                passed  = False,
-                reason  = f"low_confidence(score={best_score:.4f})",
-                message = (
+                passed=False,
+                reason=f"low_confidence(score={best_score:.4f})",
+                message=(
                     "The retrieved passages have very low relevance scores for your "
                     "question, which means the 10-K documents may not contain the "
                     "information you are looking for. "
@@ -151,9 +151,9 @@ class PreGuardrail:
         if bool(INVESTMENT_ADVICE_PATTERNS.search(query)):
             logger.warning("Guardrail FAIL: investment advice request: '%s'", query)
             return GuardrailResult(
-                passed  = False,
-                reason  = "investment_advice",
-                message = (
+                passed=False,
+                reason="investment_advice",
+                message=(
                     "This assistant analyses 10-K filings and cannot provide "
                     "investment advice or stock recommendations. "
                     "Please ask about specific financial metrics, strategies, or "
@@ -167,9 +167,9 @@ class PreGuardrail:
         if not mentions_company and not mentions_finance:
             logger.warning("Guardrail FAIL: off-topic query: '%s'", query)
             return GuardrailResult(
-                passed  = False,
-                reason  = "off_topic",
-                message = (
+                passed=False,
+                reason="off_topic",
+                message=(
                     "This assistant specialises in the annual reports (10-K filings) "
                     "of Tesla, Apple, and Microsoft. "
                     "Please ask a question related to these companies or their financials."
@@ -198,6 +198,7 @@ class PreGuardrail:
 
 # ── Post-generation guardrails ────────────────────────────────────────────────
 
+
 class PostGuardrail:
     """Checks to run after the LLM generates a response."""
 
@@ -210,9 +211,9 @@ class PostGuardrail:
         if found:
             logger.warning("Guardrail WARN: possible hallucination phrases: %s", found)
             return GuardrailResult(
-                passed  = False,
-                reason  = f"hallucination_phrases({found})",
-                message = (
+                passed=False,
+                reason=f"hallucination_phrases({found})",
+                message=(
                     "⚠️  Note: The answer may contain information not grounded in "
                     "the provided 10-K documents. Please verify against the source pages."
                 ),
@@ -230,11 +231,10 @@ class PostGuardrail:
         if not citation_pattern.search(answer):
             logger.warning("Guardrail WARN: no citations found in answer")
             return GuardrailResult(
-                passed  = False,
-                reason  = "no_citations",
-                message = (
-                    "⚠️  Note: This answer does not include source citations. "
-                    "Treat it with caution."
+                passed=False,
+                reason="no_citations",
+                message=(
+                    "⚠️  Note: This answer does not include source citations. Treat it with caution."
                 ),
             )
 

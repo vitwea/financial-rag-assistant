@@ -23,14 +23,15 @@ import sys
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-LOG_DIR      = Path("logs")
-LOG_FILE     = LOG_DIR / "rag_assistant.log"
-LOG_LEVEL    = logging.DEBUG      # change to INFO in production
-LOG_FORMAT   = "%(asctime)s | %(levelname)-8s | %(name)-35s | %(message)s"
-DATE_FORMAT  = "%Y-%m-%d %H:%M:%S"
+LOG_DIR = Path("logs")
+LOG_FILE = LOG_DIR / "rag_assistant.log"
+LOG_LEVEL = logging.DEBUG  # change to INFO in production
+LOG_FORMAT = "%(asctime)s | %(levelname)-8s | %(name)-35s | %(message)s"
+DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 
 
 # ── Formatter ─────────────────────────────────────────────────────────────────
+
 
 class _ColourFormatter(logging.Formatter):
     """
@@ -40,10 +41,10 @@ class _ColourFormatter(logging.Formatter):
     """
 
     COLOURS = {
-        logging.DEBUG:    "\033[37m",    # white
-        logging.INFO:     "\033[36m",    # cyan
-        logging.WARNING:  "\033[33m",    # yellow
-        logging.ERROR:    "\033[31m",    # red
+        logging.DEBUG: "\033[37m",  # white
+        logging.INFO: "\033[36m",  # cyan
+        logging.WARNING: "\033[33m",  # yellow
+        logging.ERROR: "\033[31m",  # red
         logging.CRITICAL: "\033[1;31m",  # bold red
     }
     RESET = "\033[0m"
@@ -57,6 +58,7 @@ class _ColourFormatter(logging.Formatter):
 
 
 # ── Root logger setup (runs once at import time) ──────────────────────────────
+
 
 def _setup_root_logger() -> None:
     """
@@ -78,18 +80,14 @@ def _setup_root_logger() -> None:
     # INFO and above only — DEBUG is too verbose for the console
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setLevel(logging.INFO)
-    stream_handler.setFormatter(
-        _ColourFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
-    )
+    stream_handler.setFormatter(_ColourFormatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT))
     root.addHandler(stream_handler)
 
     # ── File handler ───────────────────────────────────────────────────────
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     file_handler = logging.FileHandler(LOG_FILE, encoding="utf-8")
     file_handler.setLevel(LOG_LEVEL)
-    file_handler.setFormatter(
-        logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT)
-    )
+    file_handler.setFormatter(logging.Formatter(fmt=LOG_FORMAT, datefmt=DATE_FORMAT))
     root.addHandler(file_handler)
 
 
@@ -97,6 +95,7 @@ _setup_root_logger()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
+
 
 def get_logger(name: str) -> logging.Logger:
     """

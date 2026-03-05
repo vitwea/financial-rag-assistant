@@ -30,21 +30,22 @@ logger = get_logger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS  = 1024
+MAX_TOKENS = 1024
 TEMPERATURE = 0.0
 
 # Number of independent judge calls — scores are averaged to reduce variance
 N_RUNS = 2
 
 SCORE_THRESHOLDS = {
-    "grounding":    0.55,   # calibrated for financial document synthesis
-    "relevance":    0.65,
-    "faithfulness": 0.55,   # paraphrasing ≠ hallucination
+    "grounding": 0.55,  # calibrated for financial document synthesis
+    "relevance": 0.65,
+    "faithfulness": 0.55,  # paraphrasing ≠ hallucination
     "completeness": 0.50,
 }
 
 
 # ── Result dataclass ──────────────────────────────────────────────────────────
+
 
 @dataclass
 class EvaluationResult:
@@ -52,25 +53,22 @@ class EvaluationResult:
     Averaged scores from N_RUNS Claude judge calls.
     passed is True if all averaged scores meet their minimum thresholds.
     """
-    grounding:    float
-    relevance:    float
+
+    grounding: float
+    relevance: float
     faithfulness: float
     completeness: float
-    reasoning:    dict
-    passed:       bool = True
+    reasoning: dict
+    passed: bool = True
 
     def __post_init__(self):
         self.passed = all(
-            getattr(self, dim) >= threshold
-            for dim, threshold in SCORE_THRESHOLDS.items()
+            getattr(self, dim) >= threshold for dim, threshold in SCORE_THRESHOLDS.items()
         )
 
     @property
     def average(self) -> float:
-        return (
-            self.grounding + self.relevance +
-            self.faithfulness + self.completeness
-        ) / 4
+        return (self.grounding + self.relevance + self.faithfulness + self.completeness) / 4
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -158,6 +156,7 @@ def _build_judge_prompt(query: str, answer: str, chunks: list[dict]) -> str:
 
 # ── Evaluator ─────────────────────────────────────────────────────────────────
 
+
 class RAGEvaluator:
     """
     Evaluates RAG responses using Claude as a judge.
@@ -177,11 +176,11 @@ class RAGEvaluator:
         user_prompt = _build_judge_prompt(query, answer, chunks)
 
         response = self.client.messages.create(
-            model       = JUDGE_MODEL,
-            max_tokens  = MAX_TOKENS,
-            temperature = TEMPERATURE,
-            system      = JUDGE_SYSTEM_PROMPT,
-            messages    = [{"role": "user", "content": user_prompt}],
+            model=JUDGE_MODEL,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE,
+            system=JUDGE_SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_prompt}],
         )
 
         raw = response.content[0].text.strip()
@@ -190,7 +189,7 @@ class RAGEvaluator:
 
     def evaluate(
         self,
-        query:  str,
+        query: str,
         answer: str,
         chunks: list[dict],
     ) -> EvaluationResult:
@@ -198,7 +197,7 @@ class RAGEvaluator:
         Score a RAG response by averaging N_RUNS independent judge calls.
         Averaging reduces variance from LLM non-determinism to ±0.05.
         """
-        logger.info("Evaluating (%d runs): \"%s\"", N_RUNS, query[:80])
+        logger.info('Evaluating (%d runs): "%s"', N_RUNS, query[:80])
 
         dims = ["grounding", "relevance", "faithfulness", "completeness"]
         accumulated = {d: 0.0 for d in dims}
@@ -210,8 +209,9 @@ class RAGEvaluator:
                 for d in dims:
                     accumulated[d] += float(scores[d])
                 last_reasoning = scores.get("reasoning", {})
-                logger.debug("Run %d/%d: %s", run + 1, N_RUNS,
-                             {d: round(scores[d], 2) for d in dims})
+                logger.debug(
+                    "Run %d/%d: %s", run + 1, N_RUNS, {d: round(scores[d], 2) for d in dims}
+                )
             except Exception as exc:
                 logger.warning("Judge run %d failed: %s — skipping", run + 1, exc)
 
@@ -220,11 +220,11 @@ class RAGEvaluator:
         averaged = {d: round(accumulated[d] / divisor, 3) for d in dims}
 
         result = EvaluationResult(
-            grounding    = averaged["grounding"],
-            relevance    = averaged["relevance"],
-            faithfulness = averaged["faithfulness"],
-            completeness = averaged["completeness"],
-            reasoning    = last_reasoning,
+            grounding=averaged["grounding"],
+            relevance=averaged["relevance"],
+            faithfulness=averaged["faithfulness"],
+            completeness=averaged["completeness"],
+            reasoning=last_reasoning,
         )
 
         logger.info("Evaluation result: %s", result.summary())
@@ -233,8 +233,9 @@ class RAGEvaluator:
 
 # ── Batch evaluation ──────────────────────────────────────────────────────────
 
+
 def evaluate_batch(
-    evaluator:  RAGEvaluator,
+    evaluator: RAGEvaluator,
     test_cases: list[dict],
 ) -> list[dict]:
     """Evaluate a list of test cases and return aggregated results."""
@@ -244,20 +245,22 @@ def evaluate_batch(
         logger.info("Evaluating case %d/%d", i, len(test_cases))
         try:
             result = evaluator.evaluate(
-                query  = case["query"],
-                answer = case["answer"],
-                chunks = case["chunks"],
+                query=case["query"],
+                answer=case["answer"],
+                chunks=case["chunks"],
             )
-            results.append({
-                "query":        case["query"],
-                "passed":       result.passed,
-                "average":      round(result.average, 3),
-                "grounding":    result.grounding,
-                "relevance":    result.relevance,
-                "faithfulness": result.faithfulness,
-                "completeness": result.completeness,
-                "reasoning":    result.reasoning,
-            })
+            results.append(
+                {
+                    "query": case["query"],
+                    "passed": result.passed,
+                    "average": round(result.average, 3),
+                    "grounding": result.grounding,
+                    "relevance": result.relevance,
+                    "faithfulness": result.faithfulness,
+                    "completeness": result.completeness,
+                    "reasoning": result.reasoning,
+                }
+            )
         except Exception as exc:
             logger.error("Evaluation failed for case %d: %s", i, exc)
             results.append({"query": case["query"], "error": str(exc)})
@@ -268,7 +271,10 @@ def evaluate_batch(
         pass_rate = sum(1 for r in valid if r["passed"]) / len(valid) * 100
         logger.info(
             "Batch complete: %d/%d | avg=%.3f | pass_rate=%.0f%%",
-            len(valid), len(results), avg_score, pass_rate,
+            len(valid),
+            len(results),
+            avg_score,
+            pass_rate,
         )
 
     return results

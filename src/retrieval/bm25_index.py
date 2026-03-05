@@ -28,6 +28,7 @@ logger = get_logger(__name__)
 
 # ── Tokeniser ─────────────────────────────────────────────────────────────────
 
+
 def _tokenise(text: str) -> list[str]:
     """
     Financial-aware tokeniser:
@@ -35,32 +36,34 @@ def _tokenise(text: str) -> list[str]:
       - Keeps numbers and percentages intact ("29%", "$42B")
       - Removes punctuation except inside numbers
     """
-    text   = text.lower()
-    text   = re.sub(r"[^\w\s%$\.\-]", " ", text)
+    text = text.lower()
+    text = re.sub(r"[^\w\s%$\.\-]", " ", text)
     tokens = [t for t in text.split() if re.search(r"\w", t)]
     return tokens
 
 
 # ── Index builder ─────────────────────────────────────────────────────────────
 
+
 def build_bm25_index(metadata: list[dict]) -> BM25Okapi:
     """Build a BM25Okapi index from the chunk corpus."""
     logger.info("Building BM25 index over %d chunks...", len(metadata))
     corpus = [_tokenise(chunk["text"]) for chunk in metadata]
-    index  = BM25Okapi(corpus)
+    index = BM25Okapi(corpus)
     logger.info("BM25 index ready")
     return index
 
 
 # ── Search ────────────────────────────────────────────────────────────────────
 
+
 def bm25_search(
-    query:          str,
-    bm25:           BM25Okapi,
-    metadata:       list[dict],
-    top_k:          int = 20,
+    query: str,
+    bm25: BM25Okapi,
+    metadata: list[dict],
+    top_k: int = 20,
     company_filter: str | None = None,
-    year_filter:    int | None = None,
+    year_filter: int | None = None,
 ) -> list[dict]:
     """
     BM25 lexical search with optional company/year filters.
@@ -74,7 +77,7 @@ def bm25_search(
     results = []
     for idx, score in ranked:
         if score <= 0:
-            break   # no lexical match
+            break  # no lexical match
 
         chunk = dict(metadata[idx])
 

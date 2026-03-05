@@ -22,19 +22,26 @@ from src.evaluation.guardrails import (
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def good_chunks() -> list[dict]:
     """High-confidence chunks that should pass all guardrails."""
     return [
         {
-            "company": "tesla", "source": "tesla_10k.htm",
-            "chunk_id": 0, "start_page": 10, "end_page": 11,
+            "company": "tesla",
+            "source": "tesla_10k.htm",
+            "chunk_id": 0,
+            "start_page": 10,
+            "end_page": 11,
             "text": "Tesla faces macroeconomic risks including inflation.",
             "rerank_score": 0.85,
         },
         {
-            "company": "tesla", "source": "tesla_10k.htm",
-            "chunk_id": 1, "start_page": 12, "end_page": 13,
+            "company": "tesla",
+            "source": "tesla_10k.htm",
+            "chunk_id": 1,
+            "start_page": 12,
+            "end_page": 13,
             "text": "Key personnel risk: the company depends on Elon Musk.",
             "rerank_score": 0.72,
         },
@@ -46,8 +53,11 @@ def low_score_chunks() -> list[dict]:
     """Chunks with very low scores that should fail the confidence check."""
     return [
         {
-            "company": "apple", "source": "apple_10k.htm",
-            "chunk_id": 2, "start_page": 5, "end_page": 6,
+            "company": "apple",
+            "source": "apple_10k.htm",
+            "chunk_id": 2,
+            "start_page": 5,
+            "end_page": 6,
             "text": "Apple designs iPhones and Macs.",
             "rerank_score": 0.0005,
         },
@@ -73,6 +83,7 @@ def hallucinated_answer() -> str:
 
 
 # ── PreGuardrail.check_on_topic ───────────────────────────────────────────────
+
 
 class TestCheckOnTopic:
     def test_passes_for_company_name(self):
@@ -101,6 +112,7 @@ class TestCheckOnTopic:
 
 # ── PreGuardrail.check_has_chunks ─────────────────────────────────────────────
 
+
 class TestCheckHasChunks:
     def test_passes_with_chunks(self, good_chunks):
         assert PreGuardrail.check_has_chunks(good_chunks).passed
@@ -117,6 +129,7 @@ class TestCheckHasChunks:
 
 # ── PreGuardrail.check_confidence ─────────────────────────────────────────────
 
+
 class TestCheckConfidence:
     def test_passes_high_rerank_score(self, good_chunks):
         assert PreGuardrail.check_confidence(good_chunks).passed
@@ -127,14 +140,12 @@ class TestCheckConfidence:
         assert "low_confidence" in result.reason
 
     def test_uses_faiss_score_when_no_rerank(self):
-        chunks = [{"faiss_score": 0.05, "company": "apple",
-                   "chunk_id": 0, "text": "x"}]
+        chunks = [{"faiss_score": 0.05, "company": "apple", "chunk_id": 0, "text": "x"}]
         result = PreGuardrail.check_confidence(chunks)
         assert not result.passed
 
     def test_passes_good_faiss_score(self):
-        chunks = [{"faiss_score": 0.80, "company": "tesla",
-                   "chunk_id": 0, "text": "x"}]
+        chunks = [{"faiss_score": 0.80, "company": "tesla", "chunk_id": 0, "text": "x"}]
         assert PreGuardrail.check_confidence(chunks).passed
 
     def test_uses_best_score_not_average(self):
@@ -148,11 +159,10 @@ class TestCheckConfidence:
 
 # ── PreGuardrail.run_all ──────────────────────────────────────────────────────
 
+
 class TestPreGuardrailRunAll:
     def test_passes_valid_query_and_chunks(self, good_chunks):
-        result = PreGuardrail.run_all(
-            "What are Tesla's risk factors?", good_chunks
-        )
+        result = PreGuardrail.run_all("What are Tesla's risk factors?", good_chunks)
         assert result.passed
 
     def test_fails_off_topic_before_checking_chunks(self):
@@ -172,6 +182,7 @@ class TestPreGuardrailRunAll:
 
 # ── PostGuardrail.check_no_hallucination_phrases ─────────────────────────────
 
+
 class TestCheckNoHallucinationPhrases:
     def test_passes_clean_answer(self, good_answer):
         assert PostGuardrail.check_no_hallucination_phrases(good_answer).passed
@@ -182,19 +193,16 @@ class TestCheckNoHallucinationPhrases:
         assert "hallucination_phrases" in result.reason
 
     def test_fails_on_i_believe(self):
-        result = PostGuardrail.check_no_hallucination_phrases(
-            "I believe this is correct."
-        )
+        result = PostGuardrail.check_no_hallucination_phrases("I believe this is correct.")
         assert not result.passed
 
     def test_case_insensitive(self):
-        result = PostGuardrail.check_no_hallucination_phrases(
-            "BASED ON MY KNOWLEDGE this is true."
-        )
+        result = PostGuardrail.check_no_hallucination_phrases("BASED ON MY KNOWLEDGE this is true.")
         assert not result.passed
 
 
 # ── PostGuardrail.check_has_citations ────────────────────────────────────────
+
 
 class TestCheckHasCitations:
     def test_passes_with_citations(self, good_answer):
@@ -213,18 +221,17 @@ class TestCheckHasCitations:
             assert PostGuardrail.check_has_citations(answer).passed
 
     def test_case_insensitive_company(self):
-        assert PostGuardrail.check_has_citations(
-            "Revenue grew [tesla | pages 1–2]."
-        ).passed
+        assert PostGuardrail.check_has_citations("Revenue grew [tesla | pages 1–2].").passed
 
 
 # ── PostGuardrail.run_all ─────────────────────────────────────────────────────
+
 
 class TestPostGuardrailRunAll:
     def test_returns_list(self, good_answer):
         results = PostGuardrail.run_all(good_answer)
         assert isinstance(results, list)
-        assert len(results) == 2   # two checks currently
+        assert len(results) == 2  # two checks currently
 
     def test_all_pass_for_good_answer(self, good_answer):
         results = PostGuardrail.run_all(good_answer)
@@ -237,6 +244,7 @@ class TestPostGuardrailRunAll:
 
 
 # ── GuardrailResult ───────────────────────────────────────────────────────────
+
 
 class TestGuardrailResult:
     def test_bool_true_when_passed(self):
@@ -255,20 +263,25 @@ class TestGuardrailResult:
 
 # ── EvaluationResult ──────────────────────────────────────────────────────────
 
+
 class TestEvaluationResult:
     def test_passed_when_all_above_threshold(self):
         from src.evaluation.evaluator import EvaluationResult
+
         result = EvaluationResult(
-            grounding=0.90, relevance=0.85,
-            faithfulness=0.92, completeness=0.75,
+            grounding=0.90,
+            relevance=0.85,
+            faithfulness=0.92,
+            completeness=0.75,
             reasoning={},
         )
         assert result.passed
 
     def test_failed_when_one_below_threshold(self):
         from src.evaluation.evaluator import EvaluationResult
+
         result = EvaluationResult(
-            grounding=0.30,   # below 0.70 threshold
+            grounding=0.30,  # below 0.70 threshold
             relevance=0.85,
             faithfulness=0.92,
             completeness=0.75,
@@ -278,18 +291,24 @@ class TestEvaluationResult:
 
     def test_average_computed_correctly(self):
         from src.evaluation.evaluator import EvaluationResult
+
         result = EvaluationResult(
-            grounding=1.0, relevance=0.8,
-            faithfulness=0.6, completeness=0.4,
+            grounding=1.0,
+            relevance=0.8,
+            faithfulness=0.6,
+            completeness=0.4,
             reasoning={},
         )
         assert abs(result.average - 0.7) < 1e-6
 
     def test_summary_contains_all_dimensions(self):
         from src.evaluation.evaluator import EvaluationResult
+
         result = EvaluationResult(
-            grounding=0.9, relevance=0.8,
-            faithfulness=0.85, completeness=0.7,
+            grounding=0.9,
+            relevance=0.8,
+            faithfulness=0.85,
+            completeness=0.7,
             reasoning={},
         )
         summary = result.summary()
@@ -300,9 +319,12 @@ class TestEvaluationResult:
 
     def test_to_dict_returns_dict(self):
         from src.evaluation.evaluator import EvaluationResult
+
         result = EvaluationResult(
-            grounding=0.9, relevance=0.8,
-            faithfulness=0.85, completeness=0.7,
+            grounding=0.9,
+            relevance=0.8,
+            faithfulness=0.85,
+            completeness=0.7,
             reasoning={"grounding": "Good"},
         )
         d = result.to_dict()
@@ -312,18 +334,24 @@ class TestEvaluationResult:
 
 # ── RAGEvaluator (mocked) ─────────────────────────────────────────────────────
 
+
 class TestRAGEvaluator:
     def _make_evaluator(self):
-        with patch("src.evaluation.evaluator.anthropic.Anthropic"), \
-             patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}):
+        with (
+            patch("src.evaluation.evaluator.anthropic.Anthropic"),
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-ant-test"}),
+        ):
             from src.evaluation.evaluator import RAGEvaluator
+
             return RAGEvaluator()
 
     def test_evaluate_parses_json_response(self, good_chunks, good_answer):
         evaluator = self._make_evaluator()
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='''{
+        mock_response.content = [
+            MagicMock(
+                text="""{
             "grounding": 0.95,
             "relevance": 0.88,
             "faithfulness": 0.92,
@@ -334,16 +362,16 @@ class TestRAGEvaluator:
                 "faithfulness": "No hallucinations detected.",
                 "completeness": "Covers the main points."
             }
-        }''')]
+        }"""
+            )
+        ]
 
         evaluator.client.messages.create = MagicMock(return_value=mock_response)
 
-        result = evaluator.evaluate(
-            "What are Tesla's risks?", good_answer, good_chunks
-        )
+        result = evaluator.evaluate("What are Tesla's risks?", good_answer, good_chunks)
 
-        assert result.grounding    == 0.95
-        assert result.relevance    == 0.88
+        assert result.grounding == 0.95
+        assert result.relevance == 0.88
         assert result.faithfulness == 0.92
         assert result.completeness == 0.80
         assert result.passed
@@ -352,7 +380,9 @@ class TestRAGEvaluator:
         evaluator = self._make_evaluator()
 
         mock_response = MagicMock()
-        mock_response.content = [MagicMock(text='''```json
+        mock_response.content = [
+            MagicMock(
+                text="""```json
 {
     "grounding": 0.80,
     "relevance": 0.75,
@@ -363,7 +393,9 @@ class TestRAGEvaluator:
         "faithfulness": "ok", "completeness": "ok"
     }
 }
-```''')]
+```"""
+            )
+        ]
         evaluator.client.messages.create = MagicMock(return_value=mock_response)
 
         result = evaluator.evaluate("question", good_answer, good_chunks)
