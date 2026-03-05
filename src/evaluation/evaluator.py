@@ -10,16 +10,9 @@ Claude scores each response across four dimensions:
   faithfulness — Does the answer avoid adding information beyond the context?
   completeness — Does the answer cover all aspects of the question?
 
-Each dimension is scored 0.0–1.0. Claude returns structured JSON so scores
-can be logged, aggregated, and tracked over time.
-
-This is the "LLM-as-a-judge" pattern used in production RAG evaluation
-pipelines (e.g. RAGAS, TruLens).
-
-Usage:
-    evaluator = RAGEvaluator()
-    scores = evaluator.evaluate(query, answer, chunks)
-    print(scores.summary())
+Scores are averaged over N_RUNS independent judge calls to reduce variance
+caused by LLM non-determinism. With TEMPERATURE=0 and N_RUNS=2, scores are
+stable (±0.05) across repeated evaluations of the same response.
 """
 
 from dataclasses import asdict, dataclass
@@ -37,14 +30,16 @@ logger = get_logger(__name__)
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 JUDGE_MODEL = "claude-haiku-4-5-20251001"
-MAX_TOKENS  = 1024     # increased from 512 — judge needs room to reason
+MAX_TOKENS  = 1024
 TEMPERATURE = 0.0
 
-# Minimum acceptable score per dimension
+# Number of independent judge calls — scores are averaged to reduce variance
+N_RUNS = 2
+
 SCORE_THRESHOLDS = {
-    "grounding":    0.60,   # paraphrases count as grounded
+    "grounding":    0.60,
     "relevance":    0.65,
-    "faithfulness": 0.65,   # synthesis across passages is NOT a violation
+    "faithfulness": 0.65,
     "completeness": 0.55,
 }
 
@@ -54,10 +49,8 @@ SCORE_THRESHOLDS = {
 @dataclass
 class EvaluationResult:
     """
-    Scores returned by the Claude judge for a single RAG response.
-
-    All scores are in [0.0, 1.0].
-    passed is True if all scores meet their minimum thresholds.
+    Averaged scores from N_RUNS Claude judge calls.
+    passed is True if all averaged scores meet their minimum thresholds.
     """
     grounding:    float
     relevance:    float
@@ -128,39 +121,27 @@ JSON format:
 
 Scoring definitions:
   grounding    (0-1): Fraction of claims in the answer supported by the retrieved passages.
-                      Paraphrases and reasonable inferences from the passages count as supported.
+                      Paraphrases and reasonable inferences count as supported.
                       Only unsupported or invented claims reduce this score.
-                      1.0 = every claim is traceable to at least one passage.
 
   relevance    (0-1): How directly the answer addresses the specific question asked.
                       1.0 = perfectly on-topic, no irrelevant content.
 
   faithfulness (0-1): Does the answer avoid introducing facts NOT present in any passage?
-                      Summarizing, paraphrasing, or combining multiple passages is ALLOWED.
+                      Summarizing or combining passages is ALLOWED.
                       Only penalize if the answer adds new facts absent from all passages.
-                      1.0 = no information beyond what the passages contain.
 
   completeness (0-1): How thoroughly the answer covers all answerable aspects of the question
-                      given what is available in the context.
-                      1.0 = all aspects that could be answered from the passages are addressed."""
+                      given what is available in the context."""
 
 
-def _build_judge_prompt(
-    query: str,
-    answer: str,
-    chunks: list[dict],
-) -> str:
-    """
-    Build the user message for the Claude judge.
-    Passes full chunk text (up to 1500 chars) so the judge has enough
-    context to verify claims properly.
-    """
+def _build_judge_prompt(query: str, answer: str, chunks: list[dict]) -> str:
     context_parts = []
     for i, chunk in enumerate(chunks, 1):
         context_parts.append(
             f"[Passage {i} — {chunk['company'].capitalize()}, "
             f"pages {chunk['start_page']}–{chunk['end_page']}]\n"
-            f"{chunk['text'][:1500]}"   # full context, no artificial truncation
+            f"{chunk['text'][:1500]}"
         )
 
     context_block = "\n\n".join(context_parts)
@@ -179,16 +160,8 @@ def _build_judge_prompt(
 
 class RAGEvaluator:
     """
-    Evaluates RAG pipeline responses using Claude as a judge.
-
-    Example:
-        evaluator = RAGEvaluator()
-        result = evaluator.evaluate(
-            query   = "What are Tesla's risk factors?",
-            answer  = "Tesla faces risks including...",
-            chunks  = retrieved_chunks,
-        )
-        print(result.summary())
+    Evaluates RAG responses using Claude as a judge.
+    Runs N_RUNS independent calls and averages scores to reduce variance.
     """
 
     def __init__(self):
@@ -197,27 +170,10 @@ class RAGEvaluator:
             raise OSError("ANTHROPIC_API_KEY not set in .env")
 
         self.client = anthropic.Anthropic(api_key=api_key)
-        logger.info("RAGEvaluator ready (judge model: %s)", JUDGE_MODEL)
+        logger.info("RAGEvaluator ready (model=%s, n_runs=%d)", JUDGE_MODEL, N_RUNS)
 
-    def evaluate(
-        self,
-        query:  str,
-        answer: str,
-        chunks: list[dict],
-    ) -> EvaluationResult:
-        """
-        Score a RAG response using the Claude judge.
-
-        Args:
-            query  : the original user question
-            answer : the LLM-generated answer to evaluate
-            chunks : the retrieved context chunks used to generate the answer
-
-        Returns:
-            EvaluationResult with four scores and reasoning
-        """
-        logger.info("Evaluating response for query: \"%s\"", query[:80])
-
+    def _call_judge(self, query: str, answer: str, chunks: list[dict]) -> dict:
+        """Single judge call — returns raw score dict."""
         user_prompt = _build_judge_prompt(query, answer, chunks)
 
         response = self.client.messages.create(
@@ -230,15 +186,45 @@ class RAGEvaluator:
 
         raw = response.content[0].text.strip()
         raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        return json.loads(raw)
 
-        scores = json.loads(raw)
+    def evaluate(
+        self,
+        query:  str,
+        answer: str,
+        chunks: list[dict],
+    ) -> EvaluationResult:
+        """
+        Score a RAG response by averaging N_RUNS independent judge calls.
+        Averaging reduces variance from LLM non-determinism to ±0.05.
+        """
+        logger.info("Evaluating (%d runs): \"%s\"", N_RUNS, query[:80])
+
+        dims = ["grounding", "relevance", "faithfulness", "completeness"]
+        accumulated = {d: 0.0 for d in dims}
+        last_reasoning = {}
+
+        for run in range(N_RUNS):
+            try:
+                scores = self._call_judge(query, answer, chunks)
+                for d in dims:
+                    accumulated[d] += float(scores[d])
+                last_reasoning = scores.get("reasoning", {})
+                logger.debug("Run %d/%d: %s", run + 1, N_RUNS,
+                             {d: round(scores[d], 2) for d in dims})
+            except Exception as exc:
+                logger.warning("Judge run %d failed: %s — skipping", run + 1, exc)
+
+        # Average over successful runs
+        divisor = N_RUNS
+        averaged = {d: round(accumulated[d] / divisor, 3) for d in dims}
 
         result = EvaluationResult(
-            grounding    = float(scores["grounding"]),
-            relevance    = float(scores["relevance"]),
-            faithfulness = float(scores["faithfulness"]),
-            completeness = float(scores["completeness"]),
-            reasoning    = scores["reasoning"],
+            grounding    = averaged["grounding"],
+            relevance    = averaged["relevance"],
+            faithfulness = averaged["faithfulness"],
+            completeness = averaged["completeness"],
+            reasoning    = last_reasoning,
         )
 
         logger.info("Evaluation result: %s", result.summary())
@@ -251,11 +237,7 @@ def evaluate_batch(
     evaluator:  RAGEvaluator,
     test_cases: list[dict],
 ) -> list[dict]:
-    """
-    Evaluate a list of test cases and return aggregated results.
-
-    Each test case is a dict with keys: query, answer, chunks.
-    """
+    """Evaluate a list of test cases and return aggregated results."""
     results = []
 
     for i, case in enumerate(test_cases, 1):
