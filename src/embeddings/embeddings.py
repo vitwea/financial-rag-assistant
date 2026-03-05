@@ -15,8 +15,8 @@ Usage:
 """
 
 import json
-import pickle
 from pathlib import Path
+import pickle
 
 import faiss
 import numpy as np
