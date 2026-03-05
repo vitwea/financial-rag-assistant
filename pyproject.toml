@@ -1,0 +1,94 @@
+# pyproject.toml
+# ─────────────────────────────────────────────────────────────────────────────
+# Project metadata + tool configuration for Financial RAG Assistant
+# ─────────────────────────────────────────────────────────────────────────────
+
+[project]
+name            = "financial-rag-assistant"
+version         = "1.0.0"
+description     = "RAG pipeline for querying Tesla, Apple & Microsoft 10-K filings"
+readme          = "README.md"
+requires-python = ">=3.11"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Ruff — linter + formatter
+# Docs: https://docs.astral.sh/ruff/rules/
+# ─────────────────────────────────────────────────────────────────────────────
+
+[tool.ruff]
+target-version = "py311"
+line-length    = 100          # matches the style used in pipeline.py / api.py
+
+# Directories ruff should never touch
+exclude = [
+    ".venv", "venv", "__pycache__",
+    "data/", "logs/", "notebooks/",   # notebooks have their own style
+    ".git",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes (unused imports, undefined names)
+    "I",    # isort (import ordering)
+    "UP",   # pyupgrade (modern Python syntax)
+    "B",    # flake8-bugbear (common bugs)
+    "SIM",  # flake8-simplify
+]
+
+ignore = [
+    # ── Style choices intentional in this project ──────────────────────────
+    "E501",   # line too long — CSS strings in app.py are intentionally long
+    "E402",   # module-level import not at top — needed in notebooks / conftest
+    "B008",   # do not perform function calls in default args — FastAPI pattern
+    "SIM108", # ternary instead of if/else — readability preference
+    "UP007",  # use X | Y for union types — already used where appropriate
+
+    # ── Allow aligned assignments (the ── style in pipeline.py) ────────────
+    "E221",   # multiple spaces before operator
+    "E241",   # multiple spaces after comma
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]   # treat src.* as first-party imports
+force-sort-within-sections = true
+
+[tool.ruff.lint.per-file-ignores]
+# Tests use assert statements and mock magic — relax some rules
+"tests/*"   = ["S101", "SIM117", "B011"]
+# conftest.py modifies sys.path at module level — that's expected
+"conftest.py" = ["E402"]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Pytest
+# ─────────────────────────────────────────────────────────────────────────────
+
+[tool.pytest.ini_options]
+testpaths    = ["tests"]
+addopts      = "-v --tb=short"
+asyncio_mode = "auto"          # for any async tests added in the future
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Coverage
+# ─────────────────────────────────────────────────────────────────────────────
+
+[tool.coverage.run]
+source   = ["src"]
+omit     = [
+    "src/app.py",              # Streamlit UI — hard to unit-test
+    "*/embeddings/embeddings.py",  # requires built index
+]
+
+[tool.coverage.report]
+show_missing  = true
+skip_covered  = false
+fail_under    = 70
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
