@@ -1,0 +1,173 @@
+# .github/workflows/ci.yml
+# ─────────────────────────────────────────────────────────────────────────────
+# CI pipeline for Financial RAG Assistant
+#
+# Jobs:
+#   lint    – ruff (style + imports)
+#   test    – pytest with coverage (all API calls mocked, no keys needed)
+#   docker  – verify docker build succeeds (on main only)
+#
+# Triggers: every push and pull request to main / develop
+# ─────────────────────────────────────────────────────────────────────────────
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# Cancel redundant runs on the same branch
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# ── Shared defaults ───────────────────────────────────────────────────────────
+env:
+  PYTHON_VERSION: "3.11"
+  # Dummy keys — all external calls are mocked in tests, so no real creds needed
+  OPENAI_API_KEY:     "sk-test-openai-dummy"
+  ANTHROPIC_API_KEY:  "sk-ant-test-dummy"
+  COHERE_API_KEY:     "co-test-dummy"
+
+# ─────────────────────────────────────────────────────────────────────────────
+jobs:
+
+# ── 1. Lint ──────────────────────────────────────────────────────────────────
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install ruff
+        run: pip install ruff==0.4.7
+
+      - name: Run ruff — style check
+        run: ruff check src/ tests/ --output-format=github
+
+      - name: Run ruff — import sort check
+        run: ruff check src/ tests/ --select I --output-format=github
+
+
+# ── 2. Test ──────────────────────────────────────────────────────────────────
+  test:
+    name: Tests (pytest + coverage)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: lint
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      # ── Dependency install ────────────────────────────────────────────────
+      # PyTorch CPU-only first (matches Dockerfile) to avoid downloading CUDA
+      - name: Install PyTorch (CPU only)
+        run: |
+          pip install --no-cache-dir \
+            "torch==2.4.0+cpu" \
+            "torchvision==0.19.0+cpu" \
+            --index-url https://download.pytorch.org/whl/cpu
+
+      - name: Install sentence-transformers (no deps — torch already installed)
+        run: |
+          pip install --no-cache-dir --no-deps sentence-transformers==2.7.0
+          pip install --no-cache-dir \
+            transformers>=4.39.0 \
+            huggingface-hub>=0.23.0 \
+            tokenizers>=0.19.0 \
+            Pillow>=9.0.0 \
+            scikit-learn \
+            scipy
+
+      - name: Install project dependencies
+        run: |
+          pip install --no-cache-dir \
+            python-dotenv>=1.0.0 \
+            pypdf>=4.0.0 \
+            beautifulsoup4>=4.12.0 \
+            faiss-cpu>=1.8.0 \
+            numpy>=1.26.0 \
+            tqdm>=4.66.0 \
+            openai>=1.30.0 \
+            anthropic>=0.28.0 \
+            cohere>=5.5.0 \
+            fastapi>=0.111.0 \
+            "uvicorn[standard]>=0.29.0" \
+            pydantic>=2.7.0 \
+            pandas>=2.2.0
+
+      - name: Install test dependencies
+        run: |
+          pip install --no-cache-dir \
+            pytest>=8.2.0 \
+            pytest-cov>=5.0.0 \
+            pytest-asyncio>=0.23.0 \
+            httpx>=0.27.0
+
+      # ── Run tests ─────────────────────────────────────────────────────────
+      - name: Run pytest with coverage
+        run: |
+          pytest tests/ \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --cov-fail-under=70 \
+            -v \
+            --tb=short
+
+      # ── Upload coverage to Codecov (optional, free for public repos) ──────
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v4
+        if: always()
+        with:
+          files: ./coverage.xml
+          flags: unittests
+          fail_ci_if_error: false   # don't fail CI if Codecov is down
+
+
+# ── 3. Docker build ──────────────────────────────────────────────────────────
+  docker:
+    name: Docker build check
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Only run on pushes to main (not on every PR to save minutes)
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Create a minimal dummy index so Docker COPY doesn't fail
+      - name: Create stub data directories
+        run: |
+          mkdir -p data/index data/processed
+          touch data/index/.gitkeep data/processed/.gitkeep
+
+      - name: Build Docker image
+        run: |
+          docker build \
+            --tag financial-rag-assistant:ci \
+            --label "git-sha=${{ github.sha }}" \
+            .
+
+      - name: Smoke-test image (health check)
+        run: |
+          docker run --rm \
+            -e OPENAI_API_KEY=sk-dummy \
+            -e ANTHROPIC_API_KEY=sk-ant-dummy \
+            -e COHERE_API_KEY=co-dummy \
+            financial-rag-assistant:ci \
+            python -c "import src.utils.logger; print('Import OK')"
