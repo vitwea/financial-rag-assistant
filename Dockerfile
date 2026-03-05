@@ -40,9 +40,13 @@ RUN pip install --no-cache-dir \
     streamlit>=1.35.0 \
     pandas>=2.2.0
 
-# ── 4. Copy app ───────────────────────────────────────────────────────────────
+# ── 4. Pre-download BGE model at build time (avoids cold-start delay) ─────────
+RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-large-en-v1.5')"
+
+# ── 5. Copy app ───────────────────────────────────────────────────────────────
 COPY app.py .
 COPY src/ ./src/
 COPY data/index/ ./data/index/
 COPY data/processed/ ./data/processed/
+
 RUN mkdir -p logs
