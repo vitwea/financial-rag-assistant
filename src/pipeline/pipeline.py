@@ -7,7 +7,7 @@ Orchestrates the full RAG pipeline:
         ↓
     Pre-guardrails    (topic check, confidence check)
         ↓
-    Retriever         (FAISS + Cohere rerank)
+    Retriever         (Hybrid FAISS+BM25 → RRF → Cohere rerank)
         ↓
     LLM generation    (GPT-4o-mini with grounded prompt)
         ↓
@@ -22,12 +22,11 @@ Usage:
 """
 
 import os
-
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from src.evaluation.guardrails import PostGuardrail, PreGuardrail
 from src.retrieval.retriever import load_index, retrieve
+from src.evaluation.guardrails import PreGuardrail, PostGuardrail
 from src.utils.logger import get_logger
 
 load_dotenv()
@@ -69,7 +68,7 @@ def build_prompt(query: str, chunks: list[dict]) -> str:
     return f"[Context]\n{context_block}\n\n[Question]\n{query}"
 
 
-# ── LLM call ─────────────────────────────────────────────────────────────────
+# ── LLM call ──────────────────────────────────────────────────────────────────
 
 def call_llm(system: str, user: str, client: OpenAI) -> str:
     """Send a chat completion request and return the response text."""
@@ -90,7 +89,7 @@ def call_llm(system: str, user: str, client: OpenAI) -> str:
 
 def format_sources(chunks: list[dict]) -> str:
     """Build a deduplicated source list appended to every answer."""
-    seen = set()
+    seen  = set()
     lines = ["**Sources used:**"]
 
     for chunk in chunks:
@@ -116,32 +115,22 @@ class RAGPipeline:
 
     Example:
         pipeline = RAGPipeline()
-
-        # Basic query
         result = pipeline.ask("What are Tesla's main risk factors?")
-
-        # With automatic quality evaluation (uses Claude judge, slower)
         result = pipeline.ask("What are Tesla's main risk factors?", evaluate=True)
-
-        print(result["answer"])
-        print(result["sources"])
-        if result.get("evaluation"):
-            print(result["evaluation"].summary())
     """
 
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise OSError("OPENAI_API_KEY not set in .env")
+            raise EnvironmentError("OPENAI_API_KEY not set in .env")
 
-        self.client   = OpenAI(api_key=api_key)
-        self.index, self.metadata = load_index()
-        self._evaluator = None   # lazy-loaded only when evaluate=True
-        logger.info("RAGPipeline ready")
+        self.client = OpenAI(api_key=api_key)
+        # load_index now returns (faiss_index, metadata, bm25_index)
+        self.index, self.metadata, self.bm25 = load_index()
+        self._evaluator = None
+        logger.info("RAGPipeline ready (hybrid FAISS+BM25 retrieval)")
 
     def _get_evaluator(self):
-        """Lazy-load the evaluator to avoid requiring ANTHROPIC_API_KEY
-        when evaluation is not requested."""
         if self._evaluator is None:
             from src.evaluation.evaluator import RAGEvaluator
             self._evaluator = RAGEvaluator()
@@ -161,31 +150,26 @@ class RAGPipeline:
             query          : natural-language question
             company_filter : restrict retrieval to one company
             year_filter    : restrict retrieval to one fiscal year
-            evaluate       : if True, run Claude judge after generation
-                             (adds ~2s latency and uses Anthropic API)
+            evaluate       : run Claude judge after generation (adds ~2s latency)
 
-        Returns dict with:
-            query          – original question
-            answer         – LLM-generated answer (or guardrail refusal)
-            sources        – formatted source list
-            chunks_used    – raw chunk metadata
-            guardrails     – list of guardrail results
-            evaluation     – EvaluationResult (only if evaluate=True)
-            blocked        – True if a pre-guardrail blocked the response
+        Returns dict with keys:
+            query, answer, sources, chunks_used, guardrails, evaluation, blocked
         """
         logger.info("Pipeline.ask: \"%s\" (company=%s, year=%s, evaluate=%s)",
                     query, company_filter, year_filter, evaluate)
 
-        # ── Step 1: Pre-guardrail — topic check (before retrieval) ────────────
+        # ── Step 1: Pre-guardrail — topic check ───────────────────────────────
         topic_check = PreGuardrail.check_on_topic(query)
         if not topic_check:
             logger.warning("Blocked by topic guardrail: %s", topic_check.reason)
             return self._blocked_response(query, topic_check.message, [topic_check])
 
-        # ── Step 2: Retrieve chunks ───────────────────────────────────────────
-        chunks = retrieve(query, self.index, self.metadata,
-                          company_filter=company_filter,
-                          year_filter=year_filter)
+        # ── Step 2: Retrieve chunks (hybrid FAISS + BM25 + Cohere rerank) ─────
+        chunks = retrieve(
+            query, self.index, self.metadata, self.bm25,
+            company_filter=company_filter,
+            year_filter=year_filter,
+        )
 
         # ── Step 3: Pre-guardrail — context quality check ─────────────────────
         context_check = PreGuardrail.run_all(query, chunks)
@@ -200,10 +184,8 @@ class RAGPipeline:
         logger.info("Answer generated (%d chars)", len(answer))
 
         # ── Step 5: Post-guardrails ───────────────────────────────────────────
-        post_results = PostGuardrail.run_all(answer)
+        post_results  = PostGuardrail.run_all(answer)
         post_warnings = [r.message for r in post_results if not r]
-
-        # Append any post-generation warnings to the answer
         if post_warnings:
             answer += "\n\n" + "\n".join(post_warnings)
 
@@ -227,7 +209,6 @@ class RAGPipeline:
 
     @staticmethod
     def _blocked_response(query: str, message: str, guardrails: list) -> dict:
-        """Return a safe response when a pre-guardrail blocks the pipeline."""
         return {
             "query":       query,
             "answer":      message,
@@ -237,45 +218,3 @@ class RAGPipeline:
             "evaluation":  None,
             "blocked":     True,
         }
-
-
-# ── Standalone test ───────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    pipeline = RAGPipeline()
-
-    test_cases = [
-        # Normal queries
-        ("What are the main risk factors mentioned by Tesla?",    None,    False),
-        ("How does Apple describe its Services segment revenue?", None,    False),
-        ("Compare the cloud strategies of Microsoft and Apple.",  None,    False),
-        # Evaluated query — uses Claude judge
-        ("What is Microsoft Azure revenue growth rate?",          None,    True),
-        # Guardrail test — off-topic
-        ("What is the weather in Madrid today?",                  None,    False),
-        # Guardrail test — company filter
-        ("What are the main risk factors?",                       "tesla", False),
-    ]
-
-    for question, company_filter, evaluate in test_cases:
-        logger.info("=" * 60)
-        logger.info("Q: %s", question)
-
-        result = pipeline.ask(question,
-                              company_filter=company_filter,
-                              evaluate=evaluate)
-
-        print(f"\n{result['answer']}\n")
-
-        if result["sources"]:
-            print(result["sources"])
-
-        if result.get("evaluation"):
-            print(f"\n📊 Evaluation: {result['evaluation'].summary()}")
-            for dim, text in result["evaluation"].reasoning.items():
-                print(f"   {dim}: {text}")
-
-        if result["blocked"]:
-            print("🛡️  [Blocked by guardrail]")
-
-        logger.info("=" * 60)
