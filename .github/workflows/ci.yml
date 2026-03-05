@@ -78,25 +78,7 @@ jobs:
         run: mkdir -p ~/.cache/pip
 
       # ── Dependency install ────────────────────────────────────────────────
-      # PyTorch CPU-only first (matches Dockerfile) to avoid downloading CUDA
-      - name: Install PyTorch (CPU only)
-        run: |
-          pip install --no-cache-dir \
-            "torch==2.4.0+cpu" \
-            "torchvision==0.19.0+cpu" \
-            --index-url https://download.pytorch.org/whl/cpu
-
-      - name: Install sentence-transformers (no deps — torch already installed)
-        run: |
-          pip install --no-cache-dir --no-deps sentence-transformers==2.7.0
-          pip install --no-cache-dir \
-            transformers>=4.39.0 \
-            huggingface-hub>=0.23.0 \
-            tokenizers>=0.19.0 \
-            Pillow>=9.0.0 \
-            scikit-learn \
-            scipy
-
+      # No PyTorch or sentence-transformers — embeddings via OpenAI API
       - name: Install project dependencies
         run: |
           pip install --no-cache-dir \
@@ -106,6 +88,7 @@ jobs:
             faiss-cpu>=1.8.0 \
             numpy>=1.26.0 \
             tqdm>=4.66.0 \
+            rank-bm25>=0.2.2 \
             openai>=1.30.0 \
             anthropic>=0.28.0 \
             cohere>=5.5.0 \
