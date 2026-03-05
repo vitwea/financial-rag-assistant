@@ -7,7 +7,6 @@ Run with:
     pytest tests/test_ingestion.py -v
 """
 
-import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -58,7 +57,7 @@ class TestCleanText:
         from src.ingestion.processor import clean_text
         text = "Introduction\n\n  42  \n\nConclusion"
         result = clean_text(text)
-        lines = [l.strip() for l in result.splitlines() if l.strip()]
+        lines = [line.strip() for line in result.splitlines() if line.strip()]
         assert "42" not in lines
 
     def test_preserves_financial_numbers(self):
@@ -135,7 +134,7 @@ class TestChunkPages:
         assert ids == list(range(len(chunks)))
 
     def test_word_count_within_bounds(self):
-        from src.ingestion.processor import chunk_pages, CHUNK_SIZE, MIN_CHUNK
+        from src.ingestion.processor import CHUNK_SIZE, MIN_CHUNK, chunk_pages
         pages = self._make_pages(SAMPLE_TEXT)
         for chunk in chunk_pages(pages):
             assert chunk["word_count"] >= MIN_CHUNK
