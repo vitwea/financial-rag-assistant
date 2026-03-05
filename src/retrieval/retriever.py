@@ -24,16 +24,16 @@ Usage:
     python -m src.retrieval.retriever
 """
 
+from functools import lru_cache
 import os
+from pathlib import Path
 import pickle
 import re
-from pathlib import Path
 
-from functools import lru_cache
 import cohere
+from dotenv import load_dotenv
 import faiss
 import numpy as np
-from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 
 from src.retrieval.query_expander import expand_query
@@ -132,7 +132,7 @@ def faiss_search(
     scores, indices = index.search(vec, k)
 
     results = []
-    for score, idx in zip(scores[0], indices[0]):
+    for score, idx in zip(scores[0], indices[0], strict=False):
         if idx < 0 or idx >= len(metadata):
             continue
         chunk = dict(metadata[idx])
