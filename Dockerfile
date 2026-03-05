@@ -6,10 +6,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── 1. CPU-only PyTorch ───────────────────────────────────────────────────────
+# ── 1. CPU-only PyTorch 2.4 (required by sentence-transformers >= 2.7) ────────
 RUN pip install --no-cache-dir \
-    "torch==2.3.0+cpu" \
-    "torchvision==0.18.0+cpu" \
+    "torch==2.4.0+cpu" \
+    "torchvision==0.19.0+cpu" \
     --index-url https://download.pytorch.org/whl/cpu
 
 # ── 2. sentence-transformers without deps ─────────────────────────────────────
@@ -40,10 +40,7 @@ RUN pip install --no-cache-dir \
     streamlit>=1.35.0 \
     pandas>=2.2.0
 
-# ── 4. Pre-download BGE model at build time (avoids cold-start delay) ─────────
-RUN python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('BAAI/bge-large-en-v1.5')"
-
-# ── 5. Copy app ───────────────────────────────────────────────────────────────
+# ── 4. Copy app ───────────────────────────────────────────────────────────────
 COPY app.py .
 COPY src/ ./src/
 COPY data/index/ ./data/index/
