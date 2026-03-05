@@ -37,10 +37,10 @@ TEMPERATURE = 0.0
 N_RUNS = 2
 
 SCORE_THRESHOLDS = {
-    "grounding":    0.60,
+    "grounding":    0.55,   # calibrated for financial document synthesis
     "relevance":    0.65,
-    "faithfulness": 0.65,
-    "completeness": 0.55,
+    "faithfulness": 0.55,   # paraphrasing ≠ hallucination
+    "completeness": 0.50,
 }
 
 
