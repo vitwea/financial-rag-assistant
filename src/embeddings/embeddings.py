@@ -15,8 +15,8 @@ Usage:
 
 import json
 import os
-from pathlib import Path
 import pickle
+from pathlib import Path
 
 import faiss
 import numpy as np
