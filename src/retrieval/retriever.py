@@ -188,7 +188,7 @@ def faiss_search_per_entity(
             scores, indices = index.search(vec, k)
 
             year_chunks = []
-            for score, idx in zip(scores[0], indices[0]):
+            for score, idx in zip(scores[0], indices[0], strict=False):
                 if idx < 0 or idx >= len(metadata):
                     continue
                 chunk = dict(metadata[idx])
@@ -220,7 +220,7 @@ def faiss_search_per_entity(
             scores, indices = index.search(vec, k)
 
             company_chunks = []
-            for score, idx in zip(scores[0], indices[0]):
+            for score, idx in zip(scores[0], indices[0], strict=False):
                 if idx < 0 or idx >= len(metadata):
                     continue
                 chunk = dict(metadata[idx])
