@@ -4,17 +4,14 @@ guardrails.py
 Pre- and post-generation safety checks for the RAG pipeline.
 
 Pre-generation guardrails (run BEFORE calling the LLM):
-  - Low confidence  : all retrieved chunks have very low rerank scores,
-                      meaning the index likely has no relevant content.
-  - Off-topic query : question is not about Tesla, Apple, or Microsoft.
-  - No chunks       : retriever returned nothing.
+  - Off-topic query  : question is not about Tesla, Apple, or Microsoft.
+  - No chunks        : retriever returned nothing.
+  - Low confidence   : best chunk score is below the minimum threshold.
 
 Post-generation guardrails (run AFTER the LLM responds):
   - Hallucination signal : LLM response contains phrases that indicate
                            it went beyond the provided context.
-
-If any pre-generation check fails, the pipeline short-circuits and returns
-a safe refusal message instead of calling the expensive LLM.
+  - Citation check       : answer must include at least one page citation.
 
 Usage:
     from src.evaluation.guardrails import PreGuardrail, PostGuardrail
@@ -28,17 +25,14 @@ logger = get_logger(__name__)
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-# If the best rerank score is below this threshold, context is too weak
-MIN_RERANK_SCORE  = 0.001   # comparison queries produce lower scores by design
+# Minimum rerank score — below this the retrieved context is too weak
+MIN_RERANK_SCORE = 0.01   # raised from 0.001 (was effectively never triggered)
 
-# If the best FAISS score is below this threshold (when no reranker is used)
-MIN_FAISS_SCORE   = 0.15
+# Minimum FAISS score when Cohere reranker is not available
+MIN_FAISS_SCORE  = 0.15
 
-# Companies the assistant is allowed to answer questions about
 SUPPORTED_COMPANIES = {"tesla", "apple", "microsoft"}
 
-# Keywords that suggest the query is about our supported companies or
-# general financial topics (used to detect off-topic questions)
 FINANCIAL_KEYWORDS = re.compile(
     r"\b(tesla|apple|microsoft|10-k|annual report|revenue|profit|margin|"
     r"risk|earnings|cloud|azure|iphone|ev|electric vehicle|stock|"
@@ -47,7 +41,6 @@ FINANCIAL_KEYWORDS = re.compile(
     re.IGNORECASE,
 )
 
-# Patterns that indicate investment advice requests — always blocked
 INVESTMENT_ADVICE_PATTERNS = re.compile(
     r"\b(should i (buy|sell|invest|short|hold)|"
     r"is it (worth|safe|good) to (buy|invest|own)|"
@@ -59,7 +52,6 @@ INVESTMENT_ADVICE_PATTERNS = re.compile(
     re.IGNORECASE,
 )
 
-# Phrases that indicate the LLM went beyond the provided context
 HALLUCINATION_PHRASES = [
     "based on my knowledge",
     "i believe",
@@ -73,16 +65,16 @@ HALLUCINATION_PHRASES = [
 ]
 
 
-# ── Result dataclass ──────────────────────────────────────────────────────────
+# ── Result ────────────────────────────────────────────────────────────────────
 
 class GuardrailResult:
     """
-    Outcome of a guardrail check.
+    Outcome of a single guardrail check.
 
     Attributes:
         passed   : True if the check passed (pipeline can continue)
-        reason   : human-readable explanation when the check fails
-        message  : safe response to return to the user when failed
+        reason   : machine-readable label when the check fails
+        message  : user-facing message returned when failed
     """
 
     def __init__(self, passed: bool, reason: str = "", message: str = ""):
@@ -101,14 +93,10 @@ class GuardrailResult:
 # ── Pre-generation guardrails ─────────────────────────────────────────────────
 
 class PreGuardrail:
-    """
-    Checks to run before calling the LLM.
-    All checks are fast and cheap (no API calls).
-    """
+    """Checks to run before calling the LLM (fast, no API calls)."""
 
     @staticmethod
     def check_has_chunks(chunks: list[dict]) -> GuardrailResult:
-        """Fail if retriever returned no chunks at all."""
         if not chunks:
             logger.warning("Guardrail FAIL: no chunks retrieved")
             return GuardrailResult(
@@ -124,16 +112,12 @@ class PreGuardrail:
 
     @staticmethod
     def check_confidence(chunks: list[dict]) -> GuardrailResult:
-        """
-        Fail if the best chunk score is below the minimum threshold.
-        This prevents the LLM from hallucinating when no relevant context exists.
-        """
+        """Block if the best chunk score is below the minimum threshold."""
         best_score = max(
-            c.get("rerank_score", c.get("faiss_score", 0.0))
+            c.get("rerank_score", c.get("rrf_score", c.get("faiss_score", 0.0)))
             for c in chunks
         )
 
-        # Use the appropriate threshold depending on which scorer was used
         threshold = (
             MIN_RERANK_SCORE
             if any("rerank_score" in c for c in chunks)
@@ -161,14 +145,9 @@ class PreGuardrail:
 
     @staticmethod
     def check_on_topic(query: str) -> GuardrailResult:
-        """
-        Fail if the query does not appear to be about supported companies
-        or financial topics. Prevents using the assistant as a general chatbot.
-        Also blocks investment advice requests.
-        """
+        """Reject off-topic queries and investment advice requests."""
         query_lower = query.lower()
 
-        # Block investment advice requests regardless of company mention
         if bool(INVESTMENT_ADVICE_PATTERNS.search(query)):
             logger.warning("Guardrail FAIL: investment advice request: '%s'", query)
             return GuardrailResult(
@@ -182,10 +161,7 @@ class PreGuardrail:
                 ),
             )
 
-        # Check for supported company names
         mentions_company = any(c in query_lower for c in SUPPORTED_COMPANIES)
-
-        # Check for financial keywords
         mentions_finance = bool(FINANCIAL_KEYWORDS.search(query))
 
         if not mentions_company and not mentions_finance:
@@ -204,11 +180,7 @@ class PreGuardrail:
 
     @classmethod
     def run_all(cls, query: str, chunks: list[dict]) -> GuardrailResult:
-        """
-        Run all pre-generation checks in order.
-        Returns the first failure encountered, or a passing result.
-        """
-        # Run checks sequentially — short-circuit on first failure
+        """Run all pre-generation checks. Short-circuits on first failure."""
         for check in [
             cls.check_on_topic(query),
             cls.check_has_chunks(chunks),
@@ -216,7 +188,6 @@ class PreGuardrail:
             if not check:
                 return check
 
-        # Only run confidence check if we actually have chunks
         confidence = cls.check_confidence(chunks)
         if not confidence:
             return confidence
@@ -228,24 +199,16 @@ class PreGuardrail:
 # ── Post-generation guardrails ────────────────────────────────────────────────
 
 class PostGuardrail:
-    """
-    Checks to run after the LLM generates a response.
-    Detects answers that went beyond the provided context.
-    """
+    """Checks to run after the LLM generates a response."""
 
     @staticmethod
     def check_no_hallucination_phrases(answer: str) -> GuardrailResult:
-        """
-        Flag responses that contain phrases typically used when an LLM
-        is drawing on training knowledge rather than the provided context.
-        """
+        """Flag responses that contain typical out-of-context LLM phrases."""
         answer_lower = answer.lower()
         found = [p for p in HALLUCINATION_PHRASES if p in answer_lower]
 
         if found:
-            logger.warning(
-                "Guardrail WARN: possible hallucination phrases detected: %s", found
-            )
+            logger.warning("Guardrail WARN: possible hallucination phrases: %s", found)
             return GuardrailResult(
                 passed  = False,
                 reason  = f"hallucination_phrases({found})",
@@ -259,10 +222,7 @@ class PostGuardrail:
 
     @staticmethod
     def check_has_citations(answer: str) -> GuardrailResult:
-        """
-        Warn if the answer contains no inline citations in the expected format.
-        A well-grounded answer should always cite [Company | pages X-Y].
-        """
+        """Warn if the answer contains no inline [Company | pages X–Y] citations."""
         citation_pattern = re.compile(
             r"\[(Tesla|Apple|Microsoft)\s*\|\s*pages?\s*\d+",
             re.IGNORECASE,
@@ -282,11 +242,7 @@ class PostGuardrail:
 
     @classmethod
     def run_all(cls, answer: str) -> list[GuardrailResult]:
-        """
-        Run all post-generation checks.
-        Returns a list of all results (both passes and failures).
-        Unlike pre-generation, we don't short-circuit — we collect all warnings.
-        """
+        """Run all post-generation checks. Collects all warnings (no short-circuit)."""
         results = [
             cls.check_no_hallucination_phrases(answer),
             cls.check_has_citations(answer),
