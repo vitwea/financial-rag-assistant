@@ -22,11 +22,12 @@ Usage:
 """
 
 import os
+
 from dotenv import load_dotenv
 from openai import OpenAI
 
+from src.evaluation.guardrails import PostGuardrail, PreGuardrail
 from src.retrieval.retriever import load_index, retrieve
-from src.evaluation.guardrails import PreGuardrail, PostGuardrail
 from src.utils.logger import get_logger
 
 load_dotenv()
@@ -122,7 +123,7 @@ class RAGPipeline:
     def __init__(self):
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:
-            raise EnvironmentError("OPENAI_API_KEY not set in .env")
+            raise OSError("OPENAI_API_KEY not set in .env")
 
         self.client = OpenAI(api_key=api_key)
         # load_index now returns (faiss_index, metadata, bm25_index)

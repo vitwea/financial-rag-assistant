@@ -15,8 +15,8 @@ Usage:
 
 import json
 import os
-import pickle
 from pathlib import Path
+import pickle
 
 import faiss
 import numpy as np
@@ -35,7 +35,7 @@ PROCESSED_DIR = Path("data/processed")
 INDEX_DIR     = Path("data/index")
 
 MODEL_NAME = "text-embedding-3-small"
-BATCH_SIZE = 100
+BATCH_SIZE = 512
 COMPANIES  = ["tesla", "apple", "microsoft"]
 
 
@@ -105,7 +105,7 @@ def save_artifacts(index: faiss.IndexFlatIP, chunks: list[dict]) -> None:
 def main():
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise EnvironmentError("OPENAI_API_KEY not set in .env")
+        raise OSError("OPENAI_API_KEY not set in .env")
 
     client = OpenAI(api_key=api_key)
 
