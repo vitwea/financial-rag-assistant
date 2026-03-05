@@ -23,9 +23,9 @@ Usage:
     # EvaluationResult(grounding=0.95, relevance=0.88, ...)
 """
 
+from dataclasses import asdict, dataclass
 import json
 import os
-from dataclasses import dataclass, asdict
 
 import anthropic
 from dotenv import load_dotenv
@@ -179,7 +179,7 @@ class RAGEvaluator:
     def __init__(self):
         api_key = os.getenv("ANTHROPIC_API_KEY")
         if not api_key:
-            raise EnvironmentError("ANTHROPIC_API_KEY not set in .env")
+            raise OSError("ANTHROPIC_API_KEY not set in .env")
 
         self.client = anthropic.Anthropic(api_key=api_key)
         logger.info("RAGEvaluator ready (judge model: %s)", JUDGE_MODEL)

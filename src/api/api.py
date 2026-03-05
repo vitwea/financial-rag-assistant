@@ -14,16 +14,14 @@ Run locally:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 import time
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from src.pipeline.pipeline import RAGPipeline
 from src.utils.logger import get_logger
-
-from contextlib import asynccontextmanager
 
 logger = get_logger(__name__)
 
@@ -62,12 +60,12 @@ class AskRequest(BaseModel):
         ..., min_length=5, max_length=500,
         json_schema_extra={"example": "What are the main risk factors for Tesla?"},
     )
-    company_filter: Optional[str] = Field(
+    company_filter: str | None = Field(
         default=None,
         description="Restrict to one company: 'tesla', 'apple', or 'microsoft'",
         json_schema_extra={"example": "tesla"},
     )
-    year_filter: Optional[int] = Field(
+    year_filter: int | None = Field(
         default=None,
         description="Restrict to a specific fiscal year, e.g. 2022",
         json_schema_extra={"example": 2022},
