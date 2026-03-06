@@ -23,36 +23,36 @@ logger = get_logger(__name__)
 
 SYNONYM_MAP: dict[str, dict[str, str]] = {
     "apple": {
-        "cloud":            "Services iCloud",
-        "cloud revenue":    "Services segment revenue App Store iCloud",
-        "cloud growth":     "Services revenue growth",
-        "cloud margin":     "Services gross margin",
-        "saas":             "Services software subscription",
-        "subscription":     "Services Apple One",
-        "streaming":        "Apple TV+ Apple Music Services",
-        "enterprise":       "Mac iPad business enterprise",
-        "hardware":         "iPhone Mac iPad product revenue",
-        "wearables":        "Apple Watch AirPods accessories",
+        "cloud": "Services iCloud",
+        "cloud revenue": "Services segment revenue App Store iCloud",
+        "cloud growth": "Services revenue growth",
+        "cloud margin": "Services gross margin",
+        "saas": "Services software subscription",
+        "subscription": "Services Apple One",
+        "streaming": "Apple TV+ Apple Music Services",
+        "enterprise": "Mac iPad business enterprise",
+        "hardware": "iPhone Mac iPad product revenue",
+        "wearables": "Apple Watch AirPods accessories",
     },
     "tesla": {
-        "cloud":            "software connectivity services",
-        "profit":           "gross margin net income operating income",
-        "factory":          "Gigafactory manufacturing plant",
-        "supply chain":     "manufacturing suppliers components raw materials",
-        "competition":      "competitors automotive EV market",
-        "energy":           "Powerwall Megapack solar energy storage",
-        "autonomous":       "Full Self-Driving Autopilot FSD",
-        "delivery":         "vehicle deliveries production units",
+        "cloud": "software connectivity services",
+        "profit": "gross margin net income operating income",
+        "factory": "Gigafactory manufacturing plant",
+        "supply chain": "manufacturing suppliers components raw materials",
+        "competition": "competitors automotive EV market",
+        "energy": "Powerwall Megapack solar energy storage",
+        "autonomous": "Full Self-Driving Autopilot FSD",
+        "delivery": "vehicle deliveries production units",
     },
     "microsoft": {
-        "cloud":            "Azure intelligent cloud",
-        "saas":             "Microsoft 365 commercial cloud subscription",
-        "office":           "Microsoft 365 productivity",
-        "gaming":           "Xbox gaming Activision",
-        "search":           "Bing search advertising",
-        "enterprise":       "commercial cloud enterprise agreements",
-        "ai":               "Azure OpenAI Copilot artificial intelligence",
-        "linkedin":         "LinkedIn professional network",
+        "cloud": "Azure intelligent cloud",
+        "saas": "Microsoft 365 commercial cloud subscription",
+        "office": "Microsoft 365 productivity",
+        "gaming": "Xbox gaming Activision",
+        "search": "Bing search advertising",
+        "enterprise": "commercial cloud enterprise agreements",
+        "ai": "Azure OpenAI Copilot artificial intelligence",
+        "linkedin": "LinkedIn professional network",
     },
 }
 
@@ -78,8 +78,7 @@ def expand_query(query: str, company: str | None = None) -> str:
         → "Compare cloud revenue Services iCloud Azure intelligent cloud ..."
     """
     companies_to_check = (
-        [company] if company and company in SYNONYM_MAP
-        else list(SYNONYM_MAP.keys())
+        [company] if company and company in SYNONYM_MAP else list(SYNONYM_MAP.keys())
     )
 
     extra_terms: set[str] = set()
@@ -95,7 +94,7 @@ def expand_query(query: str, company: str | None = None) -> str:
 
     expanded = query + " " + " ".join(sorted(extra_terms))
     logger.debug(
-        "Query expanded: \"%s\"",
+        'Query expanded: "%s"',
         expanded[:120] + ("…" if len(expanded) > 120 else ""),
     )
     return expanded
