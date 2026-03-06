@@ -11,43 +11,65 @@ import pytest
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
+
 @pytest.fixture()
 def sample_metadata() -> list[dict]:
     return [
         {
-            "chunk_id": 0, "company": "tesla", "year": 2024,
-            "source": "tesla_10k_2024.htm", "start_page": 10, "end_page": 11,
+            "chunk_id": 0,
+            "company": "tesla",
+            "year": 2024,
+            "source": "tesla_10k_2024.htm",
+            "start_page": 10,
+            "end_page": 11,
             "text": "Tesla faces macroeconomic risks including inflation and "
-                    "interest rate increases reducing demand for electric vehicles.",
+            "interest rate increases reducing demand for electric vehicles.",
         },
         {
-            "chunk_id": 1, "company": "tesla", "year": 2023,
-            "source": "tesla_10k_2023.htm", "start_page": 16, "end_page": 17,
+            "chunk_id": 1,
+            "company": "tesla",
+            "year": 2023,
+            "source": "tesla_10k_2023.htm",
+            "start_page": 16,
+            "end_page": 17,
             "text": "Tesla supply chain disruptions and semiconductor shortages "
-                    "impact production capacity and delivery timelines.",
+            "impact production capacity and delivery timelines.",
         },
         {
-            "chunk_id": 2, "company": "apple", "year": 2024,
-            "source": "apple_10k_2024.htm", "start_page": 42, "end_page": 43,
+            "chunk_id": 2,
+            "company": "apple",
+            "year": 2024,
+            "source": "apple_10k_2024.htm",
+            "start_page": 42,
+            "end_page": 43,
             "text": "Apple iPhone revenue reached $200B in fiscal 2024 driven "
-                    "by strong iPhone 15 demand and services growth.",
+            "by strong iPhone 15 demand and services growth.",
         },
         {
-            "chunk_id": 3, "company": "microsoft", "year": 2024,
-            "source": "microsoft_10k_2024.htm", "start_page": 67, "end_page": 68,
+            "chunk_id": 3,
+            "company": "microsoft",
+            "year": 2024,
+            "source": "microsoft_10k_2024.htm",
+            "start_page": 67,
+            "end_page": 68,
             "text": "Microsoft Azure revenue grew 29% year-over-year in fiscal 2024 "
-                    "driven by AI services and cloud infrastructure.",
+            "driven by AI services and cloud infrastructure.",
         },
         {
-            "chunk_id": 4, "company": "microsoft", "year": 2022,
-            "source": "microsoft_10k_2022.htm", "start_page": 47, "end_page": 48,
+            "chunk_id": 4,
+            "company": "microsoft",
+            "year": 2022,
+            "source": "microsoft_10k_2022.htm",
+            "start_page": 47,
+            "end_page": 48,
             "text": "Microsoft EBITDA margin improved as commercial cloud revenue "
-                    "grew 32% in fiscal 2022.",
+            "grew 32% in fiscal 2022.",
         },
     ]
 
 
 # ── build_bm25_index ──────────────────────────────────────────────────────────
+
 
 class TestBuildBM25Index:
     def test_returns_bm25_object(self, sample_metadata):
@@ -80,6 +102,7 @@ class TestBuildBM25Index:
 
 
 # ── bm25_search ───────────────────────────────────────────────────────────────
+
 
 class TestBM25Search:
     def test_returns_list(self, sample_metadata):
@@ -120,8 +143,11 @@ class TestBM25Search:
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
-            "revenue", bm25, sample_metadata,
-            top_k=5, company_filter="apple",
+            "revenue",
+            bm25,
+            sample_metadata,
+            top_k=5,
+            company_filter="apple",
         )
         for chunk in results:
             assert chunk["company"] == "apple"
@@ -131,8 +157,11 @@ class TestBM25Search:
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
-            "cloud revenue", bm25, sample_metadata,
-            top_k=5, year_filter=2024,
+            "cloud revenue",
+            bm25,
+            sample_metadata,
+            top_k=5,
+            year_filter=2024,
         )
         for chunk in results:
             assert chunk["year"] == 2024
@@ -143,7 +172,10 @@ class TestBM25Search:
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
-            "zzzzzzz xxxxxxxxxxx", bm25, sample_metadata, top_k=3,
+            "zzzzzzz xxxxxxxxxxx",
+            bm25,
+            sample_metadata,
+            top_k=3,
         )
         # Either empty or all scores are zero
         for chunk in results:
@@ -164,6 +196,7 @@ class TestBM25Search:
 
 
 # ── tokenize ─────────────────────────────────────────────────────────────────
+
 
 class TestTokenize:
     def test_returns_list_of_strings(self):
