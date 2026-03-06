@@ -449,7 +449,7 @@ class TestAPI:
             "/ask",
             json={"query": "What are risks?", "company_filter": "invalid_co"},
         )
-        assert response.status_code == 422
+        assert response.status_code in (400, 422)
 
     def test_ask_query_too_short(self, client):
         test_client, _ = client

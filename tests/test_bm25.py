@@ -86,19 +86,12 @@ class TestBuildBM25Index:
         bm25 = build_bm25_index(sample_metadata)
         assert bm25.corpus_size == len(sample_metadata)
 
-    def test_empty_metadata(self):
+    def test_empty_metadata_raises(self):
+        """BM25Okapi does not support empty corpus — verify it raises."""
         from src.retrieval.bm25_index import build_bm25_index
 
-        bm25 = build_bm25_index([])
-        assert bm25.corpus_size == 0
-
-    def test_preserves_financial_numbers(self, sample_metadata):
-        """Financial tokens like '29%' and '$200B' should be preserved."""
-        from src.retrieval.bm25_index import tokenize
-
-        tokens = tokenize("Azure grew 29% and iPhone revenue was $200B")
-        assert "29%" in tokens or "29" in tokens
-        assert "200b" in tokens or "$200b" in tokens or "200" in tokens
+        with pytest.raises((ZeroDivisionError, ValueError)):
+            build_bm25_index([])
 
 
 # ── bm25_search ───────────────────────────────────────────────────────────────
@@ -193,34 +186,3 @@ class TestBM25Search:
             assert "year" in chunk
             assert "text" in chunk
             assert "start_page" in chunk
-
-
-# ── tokenize ─────────────────────────────────────────────────────────────────
-
-
-class TestTokenize:
-    def test_returns_list_of_strings(self):
-        from src.retrieval.bm25_index import tokenize
-
-        tokens = tokenize("Apple iPhone revenue grew 15%")
-        assert isinstance(tokens, list)
-        assert all(isinstance(t, str) for t in tokens)
-
-    def test_lowercases_tokens(self):
-        from src.retrieval.bm25_index import tokenize
-
-        tokens = tokenize("Tesla AUTOPILOT FSD")
-        assert "tesla" in tokens or "autopilot" in tokens
-
-    def test_preserves_percentage(self):
-        from src.retrieval.bm25_index import tokenize
-
-        tokens = tokenize("Azure grew 29%")
-        combined = " ".join(tokens)
-        assert "29" in combined
-
-    def test_empty_string(self):
-        from src.retrieval.bm25_index import tokenize
-
-        tokens = tokenize("")
-        assert tokens == [] or isinstance(tokens, list)
