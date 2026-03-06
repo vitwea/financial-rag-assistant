@@ -15,7 +15,6 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-
 # ── Shared fixtures ───────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -321,8 +320,9 @@ class TestFAISSSearch:
 class TestAPI:
     @pytest.fixture()
     def client(self, sample_chunks):
-        import src.api.api as api_module
         from fastapi.testclient import TestClient
+
+        import src.api.api as api_module
 
         mock_pipeline = MagicMock()
         mock_pipeline.metadata = sample_chunks

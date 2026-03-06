@@ -9,7 +9,6 @@ Run with:
 
 import pytest
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 @pytest.fixture()
@@ -53,6 +52,7 @@ def sample_metadata() -> list[dict]:
 class TestBuildBM25Index:
     def test_returns_bm25_object(self, sample_metadata):
         from rank_bm25 import BM25Okapi
+
         from src.retrieval.bm25_index import build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
@@ -72,7 +72,7 @@ class TestBuildBM25Index:
 
     def test_preserves_financial_numbers(self, sample_metadata):
         """Financial tokens like '29%' and '$200B' should be preserved."""
-        from src.retrieval.bm25_index import build_bm25_index, tokenize
+        from src.retrieval.bm25_index import tokenize
 
         tokens = tokenize("Azure grew 29% and iPhone revenue was $200B")
         assert "29%" in tokens or "29" in tokens
@@ -83,21 +83,21 @@ class TestBuildBM25Index:
 
 class TestBM25Search:
     def test_returns_list(self, sample_metadata):
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search("Tesla risks", bm25, sample_metadata, top_k=3)
         assert isinstance(results, list)
 
     def test_top_k_respected(self, sample_metadata):
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search("revenue", bm25, sample_metadata, top_k=2)
         assert len(results) <= 2
 
     def test_results_have_bm25_score(self, sample_metadata):
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search("Azure cloud", bm25, sample_metadata, top_k=3)
@@ -107,7 +107,7 @@ class TestBM25Search:
 
     def test_relevant_result_ranked_first(self, sample_metadata):
         """A query with exact keywords should surface the matching chunk first."""
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search("EBITDA margin", bm25, sample_metadata, top_k=5)
@@ -116,7 +116,7 @@ class TestBM25Search:
         assert results[0]["year"] == 2022
 
     def test_company_filter(self, sample_metadata):
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
@@ -127,7 +127,7 @@ class TestBM25Search:
             assert chunk["company"] == "apple"
 
     def test_year_filter(self, sample_metadata):
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
@@ -139,7 +139,7 @@ class TestBM25Search:
 
     def test_no_results_for_unrelated_query(self, sample_metadata):
         """A query with zero BM25 score should return empty or low-score results."""
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search(
@@ -151,7 +151,7 @@ class TestBM25Search:
 
     def test_returns_chunk_metadata_intact(self, sample_metadata):
         """Results should contain all original metadata fields."""
-        from src.retrieval.bm25_index import build_bm25_index, bm25_search
+        from src.retrieval.bm25_index import bm25_search, build_bm25_index
 
         bm25 = build_bm25_index(sample_metadata)
         results = bm25_search("Tesla semiconductor", bm25, sample_metadata, top_k=1)
